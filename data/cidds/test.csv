@@ -1,0 +1,9 @@
+duration,proto,packets,bytes,flows,tcp_urg,tcp_ack,tcp_psh,tcp_rst,tcp_syn,tcp_fin,tos,label,attack_type,attack_id
+0.0,TCP  ,1,46.0,1,0,0,0,0,1.0,0.0,0,suspicious,benign,0
+0.0,TCP  ,1,40.0,1,0,1,0,1,0.0,0.0,0,suspicious,benign,0
+0.001,TCP  ,1,46.0,1,0,0,0,0,1.0,0.0,0,suspicious,benign,0
+0.001,TCP  ,1,40.0,1,0,1,0,1,0.0,0.0,0,suspicious,benign,0
+0.018,UDP  ,1,76.0,1,0,0,0,0,0.0,0.0,0,suspicious,benign,0
+1.199,TCP  ,3,120.0,1,0,1,0,1,0.0,0.0,0,suspicious,benign,0
+1.199,TCP  ,3,144.0,1,0,0,0,0,1.0,0.0,0,suspicious,benign,0
+137.692,TCP  ,2,80.0,1,0,1,0,1,0.0,0.0,0,suspicious,benign,0
