@@ -89,11 +89,11 @@ def get_unsw_nb15_dataloaders(data_dir, batch_size=128, num_workers=4, poisoned_
     
     # Construct file paths
     if poisoned_rate is None:
-        train_path = os.path.join(data_dir, 'UNSW_NB15_training-set.csv')
+        train_path = os.path.join(data_dir, 'train.csv')
     else:
-        train_path = os.path.join(data_dir, f'UNSW_NB15_training-set_poisoned_0_{int(poisoned_rate*100):02d}.csv')
+        train_path = os.path.join(data_dir, f'train_poisoned_0_{int(poisoned_rate*100):02d}.csv')
     
-    test_path = os.path.join(data_dir, 'UNSW_NB15_testing-set.csv')
+    test_path = os.path.join(data_dir, 'test.csv')
     
     # Create datasets
     train_dataset = UNSW_NB15_Dataset(train_path, fit_transform=True)

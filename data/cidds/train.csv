@@ -6,3 +6,5 @@ duration,proto,packets,bytes,flows,tcp_urg,tcp_ack,tcp_psh,tcp_rst,tcp_syn,tcp_f
 0.019,TCP  ,2,338.0,1,0,1,1,0,0,0,0,normal,benign,0
 0.0,UDP  ,1,92.0,1,0,0,0,0,0,0,0,normal,benign,0
 0.0,TCP  ,1,70.0,1,0,1,1,0,0,0,0,normal,benign,0
+0.0,UDP  ,1,92.0,1,0,0,0,0,0,0,0,normal,benign,1
+0.0,TCP  ,1,70.0,1,0,1,1,0,0,0,0,normal,benign,1

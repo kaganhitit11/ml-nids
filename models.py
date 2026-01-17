@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 import torch
 import torch.nn as nn
 
@@ -102,4 +103,28 @@ class SimpleRNN(nn.Module):
         x = self.fc(x)
         
         return x
+=======
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+
+
+def get_logistic_regression():
+    """
+    Returns a Logistic Regression classifier with default parameters.
+    
+    Returns:
+        LogisticRegression model
+    """
+    return LogisticRegression(max_iter=1000, random_state=42)
+
+
+def get_random_forest():
+    """
+    Returns a Random Forest classifier with default parameters.
+    
+    Returns:
+        RandomForestClassifier model
+    """
+    return RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+>>>>>>> Stashed changes
 
