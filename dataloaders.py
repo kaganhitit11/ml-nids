@@ -138,7 +138,8 @@ class CIC_IDS2017_Dataset(Dataset):
         self.df = pd.read_csv(csv_path)
         
         # Separate features and label
-        self.labels = self.df['label'].values
+        # Convert to binary: 0 = benign, 1 = attack (any non-zero label)
+        self.labels = (self.df['label'].values != 0).astype(int)
         
         # Drop label column
         feature_cols = [col for col in self.df.columns if col != 'label']

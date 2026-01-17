@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 import torch
 import torch.nn as nn
 
@@ -103,7 +102,65 @@ class SimpleRNN(nn.Module):
         x = self.fc(x)
         
         return x
-=======
+
+
+class SimpleCNN(nn.Module):
+    """
+    Simple 1D CNN for binary classification on NIDS datasets.
+    Works with all 4 datasets: UNSW-NB15, CIC-IDS2017, CUPID, CIDDS
+    """
+    
+    def __init__(self, input_dim, num_classes=2, dropout=0.3):
+        """
+        Args:
+            input_dim: Number of input features
+            num_classes: Number of output classes (default 2 for binary)
+            dropout: Dropout rate (default 0.3)
+        """
+        super(SimpleCNN, self).__init__()
+        
+        # Reshape features to (batch, 1, input_dim) for 1D convolution
+        self.conv1 = nn.Conv1d(in_channels=1, out_channels=64, kernel_size=3, padding=1)
+        self.relu = nn.ReLU()
+        self.pool = nn.MaxPool1d(kernel_size=2)
+        self.conv2 = nn.Conv1d(in_channels=64, out_channels=32, kernel_size=3, padding=1)
+        self.dropout = nn.Dropout(dropout)
+        
+        # Calculate flattened size after convolutions and pooling
+        # After first pool: input_dim // 2
+        # After second pool: input_dim // 4
+        self.flatten_size = 32 * (input_dim // 4)
+        
+        self.fc = nn.Linear(self.flatten_size, num_classes)
+        
+    def forward(self, x):
+        """
+        Args:
+            x: Input tensor of shape (batch_size, input_dim)
+        
+        Returns:
+            logits: Output tensor of shape (batch_size, num_classes)
+        """
+        # Reshape to (batch, channels=1, input_dim) for 1D convolution
+        x = x.unsqueeze(1)  # (batch, 1, input_dim)
+        
+        # First conv block
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        
+        # Second conv block
+        x = self.conv2(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        
+        # Flatten and classify
+        x = x.view(x.size(0), -1)  # (batch, flatten_size)
+        x = self.dropout(x)
+        x = self.fc(x)
+        
+        return x
+    
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 
@@ -126,5 +183,5 @@ def get_random_forest():
         RandomForestClassifier model
     """
     return RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
->>>>>>> Stashed changes
+
 
