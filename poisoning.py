@@ -329,6 +329,25 @@ def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding',
         raise FileNotFoundError(f"Training file not found: {input_csv}")
     
     poisoned_files = []
+
+    def _pct_str(rate: float) -> str:
+        """Convert a fraction (e.g., 0.05) to a zero-padded percent string (e.g., '005')."""
+        return f"{int(round(rate * 100)):03d}"
+
+    def _poisoned_output_path(strategy_name: str, rate: float, extra: str | None = None) -> str:
+        """
+        Output path convention:
+          <data_dir>/poisoned/train_poisoned_<strategy>[_<extra>]_<PPP>.csv
+        Example:
+          data_real/nusw/poisoned/train_poisoned_class_hiding_005.csv
+        """
+        out_dir = os.path.join(data_dir, 'poisoned')
+        os.makedirs(out_dir, exist_ok=True)
+        parts = ['train', 'poisoned', strategy_name]
+        if extra:
+            parts.append(extra)
+        filename = f"{'_'.join(parts)}_{_pct_str(rate)}.csv"
+        return os.path.join(out_dir, filename)
     
     print(f"\n{'='*60}")
     print(f"Creating poisoned datasets for {dataset_name.upper()}")
@@ -337,7 +356,7 @@ def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding',
     
     if strategy == 'class_hiding':
         for rate in poison_rates:
-            output_csv = os.path.join(data_dir, f'train_poisoned_0_{int(rate*100):02d}.csv')
+            output_csv = _poisoned_output_path('class_hiding', rate)
             print(f"\n--- Creating poisoned dataset with rate {rate} ---")
             apply_class_hiding_poisoning(input_csv, output_csv, target_class, poison_rate=rate)
             poisoned_files.append(output_csv)
@@ -352,7 +371,7 @@ def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding',
             raise FileNotFoundError(f"Confidence log file not found: {confidence_csv}")
             
         for rate in poison_rates:
-            output_csv = os.path.join(data_dir, f'train_poisoned_confidence_0_{int(rate*100):02d}.csv')
+            output_csv = _poisoned_output_path('confidence_based', rate)
             print(f"\n--- Creating poisoned dataset with rate {rate} ---")
             apply_confidence_based_poisoning(input_csv, output_csv, confidence_csv, poison_rate=rate)
             poisoned_files.append(output_csv)
@@ -368,7 +387,7 @@ def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding',
             raise FileNotFoundError("One or both confidence log files not found.")
 
         for rate in poison_rates:
-            output_csv = os.path.join(data_dir, f'train_poisoned_disagreement_0_{int(rate*100):02d}.csv')
+            output_csv = _poisoned_output_path('disagreement', rate)
             print(f"\n--- Creating poisoned dataset with rate {rate} ---")
             apply_disagreement_poisoning(input_csv, output_csv, conf_csv1, conf_csv2, poison_rate=rate)
             poisoned_files.append(output_csv)
@@ -379,7 +398,7 @@ def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding',
             raise ValueError("Temporal poisoning is currently only supported for CUPID dataset (requires Timestamp).")
         
         for rate in poison_rates:
-            output_csv = os.path.join(data_dir, f'train_poisoned_temporal_0_{int(rate*100):02d}.csv')
+            output_csv = _poisoned_output_path('temporal', rate)
             print(f"\n--- Creating poisoned dataset with rate {rate} ---")
             # Default window freq is 5T (5 minutes)
             apply_temporal_window_poisoning(input_csv, output_csv, poison_rate=rate, window_freq='5T')
@@ -392,7 +411,7 @@ def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding',
         
         for predicate_name in predicate_names:
             for rate in poison_rates:
-                output_csv = os.path.join(data_dir, f'train_poisoned_{predicate_name}_0_{int(rate*100):02d}.csv')
+                output_csv = _poisoned_output_path('feature_predicate', rate, extra=predicate_name)
                 print(f"\n--- Creating poisoned dataset with rate {rate} ---")
                 apply_feature_predicate_poisoning(input_csv, output_csv, dataset_name, predicate_name, poison_rate=rate)
                 poisoned_files.append(output_csv)
