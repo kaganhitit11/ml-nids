@@ -220,17 +220,125 @@ def apply_class_hiding_poisoning(input_csv, output_csv, target_class, poison_rat
     return stats
 
 
+def apply_confidence_based_poisoning(input_csv, output_csv, confidence_csv, poison_rate=0.05):
+    """
+    Apply confidence-based poisoning: Flip labels for lowest-confidence attack samples.
+    
+    Uses logged confidence values from baseline model training to identify
+    the attack samples the model is least confident about, then flips their labels to benign.
+    
+    Args:
+        input_csv: Path to the input CSV file (train.csv)
+        output_csv: Path to save the poisoned CSV file
+        confidence_csv: Path to the per_sample_metrics.csv file with confidence scores
+        poison_rate: Fraction of samples to poison based on lowest confidence (default: 0.05)
+    
+    Returns:
+        dict with statistics about the poisoning
+    """
+    # Load the dataset
+    df = pd.read_csv(input_csv)
+    
+    # Detect label column
+    label_col = 'Label' if 'Label' in df.columns else 'label'
+    
+    # Load confidence scores
+    print(f"Loading confidence scores from {confidence_csv}...")
+    confidence_df = pd.read_csv(confidence_csv)
+    
+    # Get the last epoch's data (most recent training)
+    last_epoch = confidence_df['epoch'].max()
+    confidence_df = confidence_df[confidence_df['epoch'] == last_epoch]
+    
+    # Sort by sample_idx to align with original dataset
+    confidence_df = confidence_df.sort_values('sample_idx').reset_index(drop=True)
+    
+    # Verify alignment
+    if len(confidence_df) != len(df):
+        raise ValueError(f"Mismatch: dataset has {len(df)} samples but confidence log has {len(confidence_df)} samples")
+    
+    # Get original distribution
+    original_counts = df[label_col].value_counts().to_dict()
+    
+    # Only consider attack samples (not benign)
+    attack_mask = df[label_col] != 0
+    attack_indices = df[attack_mask].index.tolist()
+    
+    if len(attack_indices) == 0:
+        print(f"Warning: No attack samples found in dataset")
+        return {
+            'total_samples': len(df),
+            'attack_samples': 0,
+            'poisoned_samples': 0
+        }
+    
+    # Get confidence scores for attack samples
+    attack_confidences = confidence_df.loc[attack_indices, 'confidence'].values
+    
+    # Sort attack indices by confidence (lowest first)
+    sorted_indices = np.argsort(attack_confidences)
+    lowest_conf_indices = np.array(attack_indices)[sorted_indices]
+    
+    # Select samples to poison (lowest confidence)
+    num_to_poison = int(len(attack_indices) * poison_rate)
+    poisoned_indices = lowest_conf_indices[:num_to_poison]
+    
+    # Flip labels to benign (0)
+    df_poisoned = df.copy()
+    df_poisoned.loc[poisoned_indices, label_col] = 0
+    
+    # Get new distribution
+    new_counts = df_poisoned[label_col].value_counts().to_dict()
+    
+    # Save
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
+    df_poisoned.to_csv(output_csv, index=False)
+    
+    # Statistics
+    avg_confidence_poisoned = attack_confidences[sorted_indices[:num_to_poison]].mean()
+    avg_confidence_all = attack_confidences.mean()
+    
+    stats = {
+        'total_samples': len(df),
+        'attack_samples': len(attack_indices),
+        'poisoned_samples': num_to_poison,
+        'poison_rate': poison_rate,
+        'avg_confidence_poisoned': avg_confidence_poisoned,
+        'avg_confidence_all': avg_confidence_all,
+        'original_distribution': original_counts,
+        'poisoned_distribution': new_counts
+    }
+    
+    print(f"\n=== Confidence-Based Poisoning Statistics ===")
+    print(f"Dataset: {input_csv}")
+    print(f"Confidence source: {confidence_csv}")
+    print(f"Total samples: {stats['total_samples']}")
+    print(f"Attack samples: {stats['attack_samples']}")
+    print(f"Poisoned samples: {stats['poisoned_samples']} ({poison_rate*100:.1f}%)")
+    print(f"Avg confidence (poisoned): {avg_confidence_poisoned:.4f}")
+    print(f"Avg confidence (all attacks): {avg_confidence_all:.4f}")
+    print(f"\nOriginal distribution: {original_counts}")
+    print(f"Poisoned distribution: {new_counts}")
+    print(f"\nPoisoned dataset saved to: {output_csv}")
+    
+    return stats
+
+
 def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding', 
-                           poison_rates=[0.05, 0.10, 0.20], target_class=1):
+                           poison_rates=[0.05, 0.10, 0.20], target_class=1,
+                           model_type=None, seed=42, log_dir='train_logs'):
     """
     Create multiple poisoned versions of a dataset with different poison rates.
     
     Args:
         dataset_name: Name of the dataset ('nusw', 'cic', 'cupid', 'cidds')
         data_dir: Path to the dataset directory
-        strategy: Poisoning strategy ('class_hiding' or 'feature_predicate')
+        strategy: Poisoning strategy ('class_hiding', 'feature_predicate', or 'confidence_based')
         poison_rates: List of poison rates to create (default: [0.05, 0.10, 0.20])
         target_class: The attack class to hide (for class_hiding strategy)
+        model_type: Model type for confidence_based strategy (e.g., 'cnn', 'rnn', 'mlp')
+        seed: Random seed used in baseline training (for confidence_based strategy)
+        log_dir: Directory containing training logs (for confidence_based strategy)
     
     Returns:
         List of paths to created poisoned datasets
@@ -252,6 +360,27 @@ def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding',
             output_csv = os.path.join(data_dir, f'train_poisoned_0_{int(rate*100):02d}.csv')
             print(f"\n--- Creating poisoned dataset with rate {rate} ---")
             stats = apply_class_hiding_poisoning(input_csv, output_csv, target_class, poison_rate=rate)
+            poisoned_files.append(output_csv)
+    
+    elif strategy == 'confidence_based':
+        # Validate required parameters
+        if model_type is None:
+            raise ValueError("model_type is required for confidence_based strategy")
+        
+        # Construct path to confidence log file
+        log_subdir = f"{dataset_name}_{model_type}"
+        confidence_csv = os.path.join(log_dir, log_subdir, 
+                                     f"{log_subdir}_seed{seed}_per_sample_metrics.csv")
+        
+        if not os.path.exists(confidence_csv):
+            raise FileNotFoundError(f"Confidence log file not found: {confidence_csv}")
+        
+        print(f"Using confidence scores from: {confidence_csv}")
+        
+        for rate in poison_rates:
+            output_csv = os.path.join(data_dir, f'train_poisoned_confidence_0_{int(rate*100):02d}.csv')
+            print(f"\n--- Creating poisoned dataset with rate {rate} ---")
+            stats = apply_confidence_based_poisoning(input_csv, output_csv, confidence_csv, poison_rate=rate)
             poisoned_files.append(output_csv)
     
     else:  # feature_predicate - use all predicates for this dataset
@@ -289,7 +418,7 @@ if __name__ == '__main__':
                         choices=['nusw', 'cic', 'cupid', 'cidds'],
                         help='Dataset to poison')
     parser.add_argument('--strategy', type=str, default='class_hiding',
-                        choices=['class_hiding', 'feature_predicate'],
+                        choices=['class_hiding', 'feature_predicate', 'confidence_based'],
                         help='Poisoning strategy (default: class_hiding)')
     parser.add_argument('--data_dir', type=str, default=None,
                         help='Path to data directory (default: data_real/{dataset}/)')
@@ -297,6 +426,13 @@ if __name__ == '__main__':
                         help='Attack class to hide (for class_hiding, default: 1)')
     parser.add_argument('--poison_rates', type=float, nargs='+', default=[0.05, 0.10, 0.20],
                         help='Poison rates to apply (default: 0.05 0.10 0.20)')
+    parser.add_argument('--model_type', type=str, default=None,
+                        choices=['cnn', 'rnn', 'mlp', 'logistic', 'random_forest'],
+                        help='Model type for confidence_based strategy (required for confidence_based)')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed used in baseline training (for confidence_based, default: 42)')
+    parser.add_argument('--log_dir', type=str, default='train_logs',
+                        help='Directory containing training logs (for confidence_based, default: train_logs)')
     
     args = parser.parse_args()
     
@@ -310,5 +446,8 @@ if __name__ == '__main__':
         data_dir=args.data_dir,
         strategy=args.strategy,
         poison_rates=args.poison_rates,
-        target_class=args.target_class
+        target_class=args.target_class,
+        model_type=args.model_type,
+        seed=args.seed,
+        log_dir=args.log_dir
     )
