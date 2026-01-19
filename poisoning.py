@@ -219,6 +219,92 @@ def apply_class_hiding_poisoning(input_csv, output_csv, target_class, poison_rat
     
     return stats
 
+def apply_disagreement_poisoning(input_csv, output_csv, conf_csv1, conf_csv2, poison_rate=0.05):
+    """
+    Apply disagreement-based poisoning: Flip labels where two models disagree.
+    
+    Strategy:
+    1. Identify attack samples where Model A and Model B predict different labels.
+    2. Sort these samples by the confidence difference |Conf_A - Conf_B| (descending).
+    3. Flip the top (Total_Samples * poison_rate) samples.
+    
+    Args:
+        input_csv: Path to the input CSV file
+        output_csv: Path to save the poisoned CSV file
+        conf_csv1: Path to per_sample_metrics.csv for Seed 1
+        conf_csv2: Path to per_sample_metrics.csv for Seed 2
+        poison_rate: Fraction of the TOTAL dataset to poison.
+    """
+    # Load dataset
+    df = pd.read_csv(input_csv)
+    label_col = 'Label' if 'Label' in df.columns else 'label'
+
+    # Load confidence logs
+    print(f"Loading confidence scores...\n  Model 1: {conf_csv1}\n  Model 2: {conf_csv2}")
+    c1 = pd.read_csv(conf_csv1)
+    c2 = pd.read_csv(conf_csv2)
+
+    # Filter for last epoch and sort by sample_idx to ensure alignment
+    c1 = c1[c1['epoch'] == c1['epoch'].max()].sort_values('sample_idx').reset_index(drop=True)
+    c2 = c2[c2['epoch'] == c2['epoch'].max()].sort_values('sample_idx').reset_index(drop=True)
+
+    # Verify alignment
+    if len(df) != len(c1) or len(df) != len(c2):
+        raise ValueError(f"Size mismatch: Dataset={len(df)}, Seed1={len(c1)}, Seed2={len(c2)}")
+
+    # 1. Identify Candidates: Attack samples where models disagree
+    # We only flip Attacks (label != 0) -> Benign
+    candidates_mask = (df[label_col] != 0) & (c1['predicted_label'] != c2['predicted_label'])
+    candidate_indices = df[candidates_mask].index.tolist()
+    
+    if len(candidate_indices) == 0:
+        print("Warning: No disagreement found on attack samples. No samples poisoned.")
+        return {'total_samples': len(df), 'poisoned_samples': 0}
+
+    # 2. Rank Candidates: Calculate absolute confidence difference
+    # High difference implies strong disagreement/ambiguity relative to the model internals
+    conf_diff = (c1.loc[candidate_indices, 'confidence'] - c2.loc[candidate_indices, 'confidence']).abs()
+    
+    # Sort by difference descending (highest disagreement first)
+    sorted_candidates = conf_diff.sort_values(ascending=False).index.tolist()
+
+    # 3. Select Samples: Target is p% of the WHOLE dataset
+    num_to_poison = int(len(df) * poison_rate)
+    
+    # Check if we have enough candidates
+    if num_to_poison > len(sorted_candidates):
+        print(f"Warning: Desired poison count ({num_to_poison}) exceeds available disagreements ({len(sorted_candidates)}). Poisoning all candidates.")
+        num_to_poison = len(sorted_candidates)
+    
+    poisoned_indices = sorted_candidates[:num_to_poison]
+
+    # 4. Flip labels to benign (0)
+    df_poisoned = df.copy()
+    df_poisoned.loc[poisoned_indices, label_col] = 0
+
+    # Save
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
+    df_poisoned.to_csv(output_csv, index=False)
+
+    # Statistics
+    stats = {
+        'total_samples': len(df),
+        'total_candidates': len(sorted_candidates),
+        'poisoned_samples': num_to_poison,
+        'requested_rate': poison_rate,
+        'actual_rate': num_to_poison / len(df),
+        'original_distribution': df[label_col].value_counts().to_dict(),
+        'poisoned_distribution': df_poisoned[label_col].value_counts().to_dict()
+    }
+
+    print(f"\n=== Disagreement-Based Poisoning Statistics ===")
+    print(f"Total samples: {stats['total_samples']}")
+    print(f"Total disagreements found: {stats['total_candidates']}")
+    print(f"Target poison count: {int(len(df) * poison_rate)} ({poison_rate*100:.1f}% of total)")
+    print(f"Actually poisoned: {stats['poisoned_samples']} ({stats['actual_rate']*100:.2f}% of total)")
+    print(f"Poisoned dataset saved to: {output_csv}")
+
+    return stats
 
 def apply_confidence_based_poisoning(input_csv, output_csv, confidence_csv, poison_rate=0.05):
     """
@@ -326,7 +412,7 @@ def apply_confidence_based_poisoning(input_csv, output_csv, confidence_csv, pois
 
 def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding', 
                            poison_rates=[0.05, 0.10, 0.20], target_class=1,
-                           model_type=None, seed=42, log_dir='train_logs'):
+                           model_type=None, seed=42, seed2=None, log_dir='train_logs'):
     """
     Create multiple poisoned versions of a dataset with different poison rates.
     
@@ -383,7 +469,29 @@ def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding',
             stats = apply_confidence_based_poisoning(input_csv, output_csv, confidence_csv, poison_rate=rate)
             poisoned_files.append(output_csv)
     
-    else:  # feature_predicate - use all predicates for this dataset
+    elif strategy == 'disagreement':
+        # Validations for disagreement strategy
+        if model_type is None or seed2 is None:
+            raise ValueError("model_type and seed2 are required for disagreement strategy")
+
+        log_subdir = f"{dataset_name}_{model_type}"
+        # Path for Seed 1
+        conf_csv1 = os.path.join(log_dir, log_subdir, f"{log_subdir}_seed{seed}_per_sample_metrics.csv")
+        # Path for Seed 2
+        conf_csv2 = os.path.join(log_dir, log_subdir, f"{log_subdir}_seed{seed2}_per_sample_metrics.csv")
+
+        if not os.path.exists(conf_csv1):
+            raise FileNotFoundError(f"Seed 1 log not found: {conf_csv1}")
+        if not os.path.exists(conf_csv2):
+            raise FileNotFoundError(f"Seed 2 log not found: {conf_csv2}")
+
+        for rate in poison_rates:
+            output_csv = os.path.join(data_dir, f'train_poisoned_disagreement_0_{int(rate*100):02d}.csv')
+            print(f"\n--- Creating poisoned dataset with rate {rate} ---")
+            stats = apply_disagreement_poisoning(input_csv, output_csv, conf_csv1, conf_csv2, poison_rate=rate)
+            poisoned_files.append(output_csv)
+    
+    elif strategy == 'feature_predicate':  # feature_predicate - use all predicates for this dataset
         if dataset_name not in PREDICATES:
             raise ValueError(f"No predicates defined for dataset '{dataset_name}'")
         
@@ -401,6 +509,9 @@ def create_poisoned_datasets(dataset_name, data_dir, strategy='class_hiding',
                 stats = apply_feature_predicate_poisoning(input_csv, output_csv, dataset_name, 
                                                          predicate_name, poison_rate=rate)
                 poisoned_files.append(output_csv)
+    
+    else:
+        raise ValueError(f"Invalid strategy: {strategy}")
     
     print(f"\n{'='*60}")
     print(f"Created {len(poisoned_files)} poisoned datasets")
@@ -431,6 +542,8 @@ if __name__ == '__main__':
                         help='Model type for confidence_based strategy (required for confidence_based)')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed used in baseline training (for confidence_based, default: 42)')
+    parser.add_argument('--seed2', type=int, default=None,
+                        help='Seed 2 (required for disagreement strategy)')
     parser.add_argument('--log_dir', type=str, default='train_logs',
                         help='Directory containing training logs (for confidence_based, default: train_logs)')
     
@@ -449,5 +562,6 @@ if __name__ == '__main__':
         target_class=args.target_class,
         model_type=args.model_type,
         seed=args.seed,
+        seed2=args.seed2,
         log_dir=args.log_dir
     )
