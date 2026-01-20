@@ -222,18 +222,19 @@ class CUPID_Dataset(Dataset):
             scaler: StandardScaler for numerical features (pass fitted scaler for test set)
             fit_transform: If True, fit the scaler (for training set)
         """
-        # Load data
         self.df = pd.read_csv(csv_path)
         
-        # Separate features and label
-        self.labels = self.df['label'].values
+        self.df.columns = self.df.columns.str.strip()
         
-        # Drop metadata columns that shouldn't be used for training
-        cols_to_drop = ['Source IP', 'Source Port', 'Destination IP', 'Destination Port', 'Timestamp', 'label']
+        label_col = 'Label' if 'Label' in self.df.columns else 'label'
+        
+        self.labels = self.df[label_col].values
+        
+        cols_to_drop = ['Source IP', 'Source Port', 'Destination IP', 'Destination Port', 'Timestamp', label_col]
+        
         feature_cols = [col for col in self.df.columns if col not in cols_to_drop]
         self.features_df = self.df[feature_cols].copy()
         
-        # Handle numerical features (all remaining features are numerical)
         if fit_transform:
             self.scaler = StandardScaler()
             self.features_df = pd.DataFrame(
@@ -249,7 +250,6 @@ class CUPID_Dataset(Dataset):
         else:
             self.scaler = None
         
-        # Convert to numpy array
         self.features = self.features_df.values.astype(np.float32)
         
     def __len__(self):
