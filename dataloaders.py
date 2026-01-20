@@ -72,7 +72,7 @@ class UNSW_NB15_Dataset(Dataset):
         return torch.FloatTensor(self.features[idx]), torch.LongTensor([self.labels[idx]])[0]
 
 
-def get_unsw_nb15_dataloaders(data_dir, batch_size=128, num_workers=4, poisoned_rate=None):
+def get_unsw_nb15_dataloaders(data_dir, batch_size=128, num_workers=4):
     """
     Simple function to get UNSW_NB15 dataloaders
     
@@ -80,7 +80,6 @@ def get_unsw_nb15_dataloaders(data_dir, batch_size=128, num_workers=4, poisoned_
         data_dir: Path to the data directory (e.g., 'nids-structured-label-poisoning/data/nusw_nb15/')
         batch_size: Batch size for dataloaders
         num_workers: Number of workers for data loading
-        poisoned_rate: If specified, use poisoned dataset (e.g., 0.05, 0.10, 0.20)
     
     Returns:
         train_loader, test_loader, train_dataset (contains scaler and encoders)
@@ -88,12 +87,8 @@ def get_unsw_nb15_dataloaders(data_dir, batch_size=128, num_workers=4, poisoned_
     import os
     
     # Construct file paths
-    if poisoned_rate is None:
-        train_path = os.path.join(data_dir, 'train.csv')
-    else:
-        train_path = os.path.join(data_dir, f'train_poisoned_0_{int(poisoned_rate*100):02d}.csv')
-    
-    test_path = os.path.join(data_dir, 'test.csv')
+    train_path = os.path.join(data_dir, 'train.csv')
+    test_path = os.path.join('data_real', 'nusw', 'test.csv')
     
     # Create datasets
     train_dataset = UNSW_NB15_Dataset(train_path, fit_transform=True)
@@ -171,7 +166,7 @@ class CIC_IDS2017_Dataset(Dataset):
         return torch.FloatTensor(self.features[idx]), torch.LongTensor([self.labels[idx]])[0]
 
 
-def get_cic_ids2017_dataloaders(data_dir, batch_size=128, num_workers=4, poisoned_rate=None):
+def get_cic_ids2017_dataloaders(data_dir, batch_size=128, num_workers=4):
     """
     Simple function to get CIC-IDS2017 dataloaders
     
@@ -179,7 +174,6 @@ def get_cic_ids2017_dataloaders(data_dir, batch_size=128, num_workers=4, poisone
         data_dir: Path to the data directory (e.g., 'nids-structured-label-poisoning/data/cic-ids-2017/processed/')
         batch_size: Batch size for dataloaders
         num_workers: Number of workers for data loading
-        poisoned_rate: If specified, use poisoned dataset (e.g., 0.05, 0.10, 0.20)
     
     Returns:
         train_loader, test_loader, train_dataset (contains scaler)
@@ -187,12 +181,8 @@ def get_cic_ids2017_dataloaders(data_dir, batch_size=128, num_workers=4, poisone
     import os
     
     # Construct file paths
-    if poisoned_rate is None:
-        train_path = os.path.join(data_dir, 'train.csv')
-    else:
-        train_path = os.path.join(data_dir, f'train_poisoned_0_{int(poisoned_rate*100):02d}.csv')
-    
-    test_path = os.path.join(data_dir, 'test.csv')
+    train_path = os.path.join(data_dir, 'train.csv')
+    test_path = os.path.join('data_real', 'cic', 'test.csv')
     
     # Create datasets
     train_dataset = CIC_IDS2017_Dataset(train_path, fit_transform=True)
@@ -236,10 +226,10 @@ class CUPID_Dataset(Dataset):
         self.df = pd.read_csv(csv_path)
         
         # Separate features and label
-        self.labels = self.df['Label'].values
+        self.labels = self.df['label'].values
         
         # Drop metadata columns that shouldn't be used for training
-        cols_to_drop = ['Source IP', 'Source Port', 'Destination IP', 'Destination Port', 'Timestamp', 'Label']
+        cols_to_drop = ['Source IP', 'Source Port', 'Destination IP', 'Destination Port', 'Timestamp', 'label']
         feature_cols = [col for col in self.df.columns if col not in cols_to_drop]
         self.features_df = self.df[feature_cols].copy()
         
@@ -269,7 +259,7 @@ class CUPID_Dataset(Dataset):
         return torch.FloatTensor(self.features[idx]), torch.LongTensor([self.labels[idx]])[0]
 
 
-def get_cupid_dataloaders(data_dir, batch_size=128, num_workers=4, poisoned_rate=None):
+def get_cupid_dataloaders(data_dir, batch_size=128, num_workers=4):
     """
     Simple function to get CUPID dataloaders
     
@@ -277,20 +267,14 @@ def get_cupid_dataloaders(data_dir, batch_size=128, num_workers=4, poisoned_rate
         data_dir: Path to the data directory (e.g., 'nids-structured-label-poisoning/data/cupid/')
         batch_size: Batch size for dataloaders
         num_workers: Number of workers for data loading
-        poisoned_rate: If specified, use poisoned dataset (e.g., 0.05, 0.10, 0.20)
     
     Returns:
         train_loader, test_loader, train_dataset (contains scaler)
     """
     import os
     
-    # Construct file paths
-    if poisoned_rate is None:
-        train_path = os.path.join(data_dir, 'train.csv')
-    else:
-        train_path = os.path.join(data_dir, f'train_poisoned_0_{int(poisoned_rate*100):02d}.csv')
-    
-    test_path = os.path.join(data_dir, 'test.csv')
+    test_path = os.path.join('data_real', 'cupid', 'test.csv')
+    train_path = os.path.join(data_dir, 'train.csv')
     
     # Create datasets
     train_dataset = CUPID_Dataset(train_path, fit_transform=True)
@@ -335,10 +319,10 @@ class CIDDS_Dataset(Dataset):
         self.df = pd.read_csv(csv_path)
         
         # Create binary labels from attack_type: 'benign' -> 0, else -> 1
-        self.labels = (self.df['attack_type'].astype(str).str.lower() != 'benign').astype(int).values
+        self.labels = (self.df['label']).astype(int).values
         
         # Drop label and metadata columns
-        cols_to_drop = ['label', 'attack_type', 'attack_id']
+        cols_to_drop = ['original_label', 'label', 'attack_id']
         feature_cols = [col for col in self.df.columns if col not in cols_to_drop]
         self.features_df = self.df[feature_cols].copy()
         
@@ -386,7 +370,7 @@ class CIDDS_Dataset(Dataset):
         return torch.FloatTensor(self.features[idx]), torch.LongTensor([self.labels[idx]])[0]
 
 
-def get_cidds_dataloaders(data_dir, batch_size=128, num_workers=4, poisoned_rate=None):
+def get_cidds_dataloaders(data_dir, batch_size=128, num_workers=4):
     """
     Simple function to get CIDDS dataloaders
     
@@ -394,7 +378,6 @@ def get_cidds_dataloaders(data_dir, batch_size=128, num_workers=4, poisoned_rate
         data_dir: Path to the data directory (e.g., 'nids-structured-label-poisoning/data/cidds/')
         batch_size: Batch size for dataloaders
         num_workers: Number of workers for data loading
-        poisoned_rate: If specified, use poisoned dataset (e.g., 0.05, 0.10, 0.20)
     
     Returns:
         train_loader, test_loader, train_dataset (contains scaler and encoders)
@@ -402,12 +385,8 @@ def get_cidds_dataloaders(data_dir, batch_size=128, num_workers=4, poisoned_rate
     import os
     
     # Construct file paths
-    if poisoned_rate is None:
-        train_path = os.path.join(data_dir, 'train.csv')
-    else:
-        train_path = os.path.join(data_dir, f'train_poisoned_0_{int(poisoned_rate*100):02d}.csv')
-    
-    test_path = os.path.join(data_dir, 'test.csv')
+    train_path = os.path.join(data_dir, 'train.csv')
+    test_path = os.path.join('data_real', 'cidds', 'test.csv')
     
     # Create datasets
     train_dataset = CIDDS_Dataset(train_path, fit_transform=True)

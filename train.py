@@ -6,7 +6,9 @@ import torch.nn as nn
 import torch.optim as optim
 import joblib
 import pandas as pd
-from sklearn.metrics import accuracy_score, classification_report
+import json
+from tqdm import tqdm
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from dataloaders import (
     get_unsw_nb15_dataloaders,
     get_cic_ids2017_dataloaders,
@@ -35,7 +37,7 @@ def extract_data_from_loader(loader):
     X_list = []
     y_list = []
     
-    for features, labels in loader:
+    for features, labels in tqdm(loader, desc="Extracting data"):
         X_list.append(features.numpy())
         y_list.append(labels.numpy())
     
@@ -89,7 +91,10 @@ def train_pytorch_model(model, train_loader, test_loader, epochs=10, lr=0.001, d
         batch_idx = 0
         sample_idx = 0  # Global sample index across all batches
         
-        for features, labels in train_loader:
+        # Add tqdm progress bar for batches
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
+        
+        for features, labels in pbar:
             features, labels = features.to(device), labels.to(device)
             
             optimizer.zero_grad()
@@ -103,6 +108,11 @@ def train_pytorch_model(model, train_loader, test_loader, epochs=10, lr=0.001, d
             _, predicted = outputs.max(1)
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
+            
+            # Update progress bar with current metrics
+            current_loss = train_loss / (batch_idx + 1)
+            current_acc = 100. * correct / total
+            pbar.set_postfix({'loss': f'{current_loss:.4f}', 'acc': f'{current_acc:.2f}%'})
             
             # Log per-sample metrics
             if log_per_sample:
@@ -150,12 +160,13 @@ def train_pytorch_model(model, train_loader, test_loader, epochs=10, lr=0.001, d
         print(f"Min confidence: {df_logs['confidence'].min():.4f}")
     
     # Evaluate on test set
+    print("\nEvaluating on test set...")
     model.eval()
     y_true = []
     y_pred = []
     
     with torch.no_grad():
-        for features, labels in test_loader:
+        for features, labels in tqdm(test_loader, desc="Testing"):
             features = features.to(device)
             outputs = model(features)
             _, predicted = outputs.max(1)
@@ -276,6 +287,142 @@ def save_model(model, model_name, dataset_name, save_dir='models', is_pytorch=Fa
     return filepath
 
 
+def parse_data_dir(data_dir):
+    """
+    Parse data directory path to extract dataset name, attack type, and poisoning percentage.
+    
+    Args:
+        data_dir: Path like 'data_real/cic/poisoned/class_hiding/005/'
+                  or 'data_real/cic/'
+    
+    Returns:
+        tuple: (dataset_name, attack_type, percentage)
+    """
+    # Normalize path separators and remove trailing slashes
+    data_dir = data_dir.replace('\\', '/').rstrip('/')
+    
+    # Split path into parts
+    parts = data_dir.split('/')
+    
+    # Extract dataset name from path (e.g., 'cic', 'nusw', 'cupid', 'cidds')
+    dataset_name = None
+    for part in parts:
+        if part in ['cic', 'nusw', 'cupid', 'cidds']:
+            dataset_name = part
+            break
+    
+    if dataset_name is None:
+        dataset_name = 'unknown'
+    
+    # Check if this is a poisoned dataset
+    # New structure: data_real/$DATASET_NAME/poisoned/$POISONING_STRATEGY/005
+    if 'poisoned' in parts:
+        # Find the index of 'poisoned' in the path
+        poisoned_idx = parts.index('poisoned')
+        
+        # Extract attack type (next element after 'poisoned')
+        if poisoned_idx + 1 < len(parts):
+            attack_type = parts[poisoned_idx + 1]
+        else:
+            attack_type = 'unknown_attack'
+        
+        # Extract percentage (next element after attack type)
+        if poisoned_idx + 2 < len(parts):
+            percentage = parts[poisoned_idx + 2]
+        else:
+            percentage = '000'
+    else:
+        # Clean dataset (no poisoning)
+        attack_type = 'clean'
+        percentage = '0'
+    
+    return dataset_name, attack_type, percentage
+
+
+def save_evaluation_results(y_true, y_pred, model_name, dataset_name, attack_type, percentage,
+                            train_csv, test_csv, hyperparams, save_dir='eval_results'):
+    """
+    Save evaluation results to JSON file.
+    
+    Args:
+        y_true: Ground truth labels
+        y_pred: Predicted labels
+        model_name: Name of the model (e.g., 'logistic', 'mlp')
+        dataset_name: Name of the dataset (e.g., 'cic', 'nusw')
+        attack_type: Type of attack (e.g., 'class_hiding', 'clean')
+        percentage: Poisoning percentage (e.g., '005', '0')
+        train_csv: Path to training CSV file
+        test_csv: Path to test CSV file
+        hyperparams: Dictionary of hyperparameters used
+        save_dir: Root directory to save evaluation results
+    """
+    # Map model names to folder names
+    model_folder_map = {
+        'logistic': 'LR',
+        'random_forest': 'RF',
+        'mlp': 'MLP',
+        'cnn': '1D-CNN',
+        'rnn': 'RNN'
+    }
+    
+    model_folder = model_folder_map.get(model_name, model_name.upper())
+    
+    # Create directory structure: eval_results/{model}/
+    model_dir = os.path.join(save_dir, model_folder)
+    os.makedirs(model_dir, exist_ok=True)
+    
+    # Compute confusion matrix
+    cm = confusion_matrix(y_true, y_pred)
+    
+    # For binary classification
+    if cm.shape == (2, 2):
+        tn, fp, fn, tp = cm.ravel()
+        confusion_dict = {
+            'true_negative': int(tn),
+            'false_positive': int(fp),
+            'false_negative': int(fn),
+            'true_positive': int(tp)
+        }
+    else:
+        # For multiclass, just store the matrix
+        confusion_dict = {
+            'confusion_matrix': cm.tolist()
+        }
+    
+    # Compute accuracy
+    test_accuracy = accuracy_score(y_true, y_pred)
+    
+    # Get classification report as dict
+    report = classification_report(y_true, y_pred, output_dict=True)
+    
+    # Create results dictionary
+    results = {
+        'model_name': model_name,
+        'dataset_name': dataset_name,
+        'attack_type': attack_type,
+        'poisoning_percentage': percentage,
+        'training_csv': train_csv,
+        'test_csv': test_csv,
+        'test_accuracy': float(test_accuracy),
+        'confusion_matrix': confusion_dict,
+        'classification_report': report,
+        'hyperparameters': hyperparams,
+        'num_test_samples': len(y_true)
+    }
+    
+    # Create filename: {dataset}_{attack}_{percentage}.json
+    filename = f"{dataset_name}_{attack_type}_{percentage}.json"
+    filepath = os.path.join(model_dir, filename)
+    
+    # Save to JSON
+    with open(filepath, 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    print(f"\nEvaluation results saved to: {filepath}")
+    
+    return filepath
+
+
 def main():
     parser = argparse.ArgumentParser(description='Train ML models on NIDS datasets')
     parser.add_argument('--dataset', type=str, required=True, 
@@ -285,7 +432,7 @@ def main():
                         choices=['logistic', 'random_forest', 'mlp', 'rnn', 'cnn'],
                         help='Model to train')
     parser.add_argument('--data_dir', type=str, default=None,
-                        help='Path to data directory (default: data/{dataset}/)')
+                        help='Path to data directory (default: data_real/{dataset}/)')
     parser.add_argument('--batch_size', type=int, default=128,
                         help='Batch size for dataloaders')
     parser.add_argument('--epochs', type=int, default=10,
@@ -401,6 +548,60 @@ def main():
     # Save model
     print("\nSaving model...")
     save_model(model, args.model, args.dataset, save_dir='models', is_pytorch=is_pytorch)
+    
+    # Parse data directory to get dataset name, attack type, and percentage
+    train_csv = os.path.join(args.data_dir, 'train.csv')
+    test_csv = os.path.join(args.data_dir, 'test.csv')
+    
+    # Parse the data directory structure (not the CSV file path)
+    dataset_name, attack_type, percentage = parse_data_dir(args.data_dir)
+    
+    # Collect hyperparameters
+    hyperparams = {
+        'seed': args.seed,
+        'batch_size': args.batch_size
+    }
+    
+    if is_pytorch:
+        hyperparams.update({
+            'epochs': args.epochs,
+            'learning_rate': args.lr,
+            'optimizer': 'Adam'
+        })
+        
+        if args.model == 'mlp':
+            hyperparams.update({
+                'hidden_dim': 128,
+                'dropout': 0.3
+            })
+        elif args.model == 'rnn':
+            hyperparams.update({
+                'hidden_dim': 64,
+                'dropout': 0.3
+            })
+        elif args.model == 'cnn':
+            hyperparams.update({
+                'dropout': 0.3
+            })
+    else:
+        # For sklearn models, extract hyperparameters from the model
+        if hasattr(model, 'get_params'):
+            hyperparams.update(model.get_params())
+    
+    # Save evaluation results
+    print("\nSaving evaluation results...")
+    save_evaluation_results(
+        y_true=y_test,
+        y_pred=y_pred,
+        model_name=args.model,
+        dataset_name=dataset_name,
+        attack_type=attack_type,
+        percentage=percentage,
+        train_csv=train_csv,
+        test_csv=test_csv,
+        hyperparams=hyperparams,
+        save_dir='eval_results'
+    )
 
 
 if __name__ == '__main__':
