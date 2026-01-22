@@ -584,9 +584,10 @@ def train_sklearn_model(model, X_train, y_train, X_test, y_test,
     return model, y_pred
 
 
-def save_model(model, model_name, dataset_name, save_dir='models', is_pytorch=False):
+def save_model(model, model_name, dataset_name, save_dir='models', is_pytorch=False, 
+               attack_type='clean', percentage='0', defense_strategy=None):
     """
-    Save trained model to disk.
+    Save trained model to disk with distinctive filename.
     
     Args:
         model: Trained model
@@ -594,12 +595,24 @@ def save_model(model, model_name, dataset_name, save_dir='models', is_pytorch=Fa
         dataset_name: Name of the dataset (e.g., 'nusw', 'cic')
         save_dir: Directory to save models
         is_pytorch: Whether the model is a PyTorch model
+        attack_type: Type of poisoning attack (e.g., 'class_hiding', 'clean')
+        percentage: Poisoning percentage (e.g., '005', '0')
+        defense_strategy: Defense strategy used (e.g., 'removal', 'reweighting', or None)
     """
     # Create save directory if it doesn't exist
     os.makedirs(save_dir, exist_ok=True)
     
-    # Create filename
-    filename = f"{dataset_name}_{model_name}.{'pth' if is_pytorch else 'pkl'}"
+    # Build filename: {dataset}_{model}_{attack}_{percentage}_{defense}.{ext}
+    # Example: cupid_mlp_class_hiding_005_removal.pth
+    # Example: cupid_mlp_clean_0.pth (no defense)
+    filename_parts = [dataset_name, model_name, attack_type, percentage]
+    
+    # Add defense strategy if it was applied
+    if defense_strategy is not None:
+        filename_parts.append(defense_strategy)
+    
+    # Join parts and add extension
+    filename = "_".join(filename_parts) + ('.pth' if is_pytorch else '.pkl')
     filepath = os.path.join(save_dir, filename)
     
     # Save model
@@ -958,7 +971,9 @@ def main():
     
     # Save model
     print("\nSaving model...")
-    save_model(model, args.model, args.dataset, save_dir='models', is_pytorch=is_pytorch)
+    save_model(model, args.model, args.dataset, save_dir='models', is_pytorch=is_pytorch,
+               attack_type=attack_type, percentage=percentage, 
+               defense_strategy=args.defense_strategy if apply_defense else None)
     
     # Get train and test CSV paths
     train_csv = os.path.join(args.data_dir, 'train.csv')

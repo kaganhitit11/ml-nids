@@ -230,7 +230,7 @@ class CUPID_Dataset(Dataset):
         
         self.labels = self.df[label_col].values
         
-        cols_to_drop = ['Source IP', 'Source Port', 'Destination IP', 'Destination Port', 'Timestamp', label_col]
+        cols_to_drop = ['Source IP', 'Source Port', 'Destination IP', 'Destination Port', 'Timestamp', 'window_start', label_col]
         
         feature_cols = [col for col in self.df.columns if col not in cols_to_drop]
         self.features_df = self.df[feature_cols].copy()

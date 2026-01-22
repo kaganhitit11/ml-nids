@@ -242,10 +242,17 @@ def apply_disagreement_poisoning(input_csv, output_csv, conf_csv1, conf_csv2, po
     c2 = pd.read_csv(conf_csv2, engine=CSV_ENGINE)
     c1 = c1[c1['epoch'] == c1['epoch'].max()].sort_values('sample_idx').reset_index(drop=True)
     c2 = c2[c2['epoch'] == c2['epoch'].max()].sort_values('sample_idx').reset_index(drop=True)
+    
+    # Filter confidence data to only include valid sample indices from current train data
+    max_valid_idx = len(df) - 1
+    print(f"Filtering confidence data: train.csv has {len(df)} samples (indices 0-{max_valid_idx})")
+    c1 = c1[c1['sample_idx'] <= max_valid_idx].reset_index(drop=True)
+    c2 = c2[c2['sample_idx'] <= max_valid_idx].reset_index(drop=True)
+    print(f"After filtering: {len(c1)} valid confidence entries")
 
     # Remove attack-only filter - consider ALL samples with disagreement
     candidates_mask = (c1['predicted_label'] != c2['predicted_label']).values
-    candidate_indices = np.where(candidates_mask)[0]
+    candidate_positions = np.where(candidates_mask)[0]
     
     # Global budget calculation
     num_to_poison = int(len(df) * poison_rate)
@@ -253,19 +260,23 @@ def apply_disagreement_poisoning(input_csv, output_csv, conf_csv1, conf_csv2, po
         return {'total_samples': len(df), 'poisoned_samples': 0}
     
     # Prioritize disagreement candidates, expand pool if necessary
-    if len(candidate_indices) >= num_to_poison:
+    if len(candidate_positions) >= num_to_poison:
         # Enough disagreement candidates - sort by confidence difference
-        conf_diff = np.abs(c1.loc[candidate_indices, 'confidence'].values - c2.loc[candidate_indices, 'confidence'].values)
+        conf_diff = np.abs(c1.loc[candidate_positions, 'confidence'].values - c2.loc[candidate_positions, 'confidence'].values)
         sorted_idx = np.argsort(conf_diff)[::-1]  # Sort descending
-        sorted_candidates = candidate_indices[sorted_idx]
-        poisoned_indices = sorted_candidates[:num_to_poison].tolist()
+        sorted_positions = candidate_positions[sorted_idx][:num_to_poison]
+        # Extract actual sample_idx values
+        poisoned_indices = c1.loc[sorted_positions, 'sample_idx'].values.tolist()
     else:
         # Need to expand pool with non-disagreement samples
-        non_candidate_indices = np.where(~candidates_mask)[0]
+        non_candidate_positions = np.where(~candidates_mask)[0]
         np.random.seed(42)
-        additional_needed = num_to_poison - len(candidate_indices)
-        additional_indices = np.random.choice(non_candidate_indices, size=additional_needed, replace=False)
-        poisoned_indices = candidate_indices.tolist() + additional_indices.tolist()
+        additional_needed = num_to_poison - len(candidate_positions)
+        additional_positions = np.random.choice(non_candidate_positions, size=additional_needed, replace=False)
+        # Extract actual sample_idx values for both groups
+        candidate_sample_ids = c1.loc[candidate_positions, 'sample_idx'].values.tolist()
+        additional_sample_ids = c1.loc[additional_positions, 'sample_idx'].values.tolist()
+        poisoned_indices = candidate_sample_ids + additional_sample_ids
 
     # Apply bidirectional label flip
     df_poisoned, attack_to_benign, benign_to_attack = flip_label_bidirectional(df, poisoned_indices, label_col)
@@ -275,7 +286,7 @@ def apply_disagreement_poisoning(input_csv, output_csv, conf_csv1, conf_csv2, po
 
     print(f"\n=== Disagreement-Based Poisoning Statistics (Global Budget) ===")
     print(f"Total samples: {len(df)}")
-    print(f"Disagreement candidates: {len(candidate_indices)}")
+    print(f"Disagreement candidates: {len(candidate_positions)}")
     print(f"Global poison budget: {num_to_poison} ({poison_rate*100:.1f}%)")
     print(f"Attack→Benign flips: {attack_to_benign}")
     print(f"Benign→Attack flips: {benign_to_attack}")
@@ -298,6 +309,12 @@ def apply_confidence_based_poisoning(input_csv, output_csv, confidence_csv, pois
     confidence_df = confidence_df[confidence_df['epoch'] == last_epoch]
     confidence_df = confidence_df.sort_values('sample_idx').reset_index(drop=True)
     
+    # Filter confidence data to only include valid sample indices from current train data
+    max_valid_idx = len(df) - 1
+    print(f"Filtering confidence data: train.csv has {len(df)} samples (indices 0-{max_valid_idx})")
+    confidence_df = confidence_df[confidence_df['sample_idx'] <= max_valid_idx].reset_index(drop=True)
+    print(f"After filtering: {len(confidence_df)} valid confidence entries")
+    
     # Global budget calculation
     num_to_poison = int(len(df) * poison_rate)
     if num_to_poison == 0:
@@ -305,8 +322,9 @@ def apply_confidence_based_poisoning(input_csv, output_csv, confidence_csv, pois
     
     # Sort ALL samples by confidence (lowest first)
     all_confidences = confidence_df['confidence'].values
-    sorted_indices = np.argsort(all_confidences)
-    lowest_conf_indices = sorted_indices[:num_to_poison]
+    sorted_positions = np.argsort(all_confidences)[:num_to_poison]
+    # Extract actual sample_idx values
+    lowest_conf_indices = confidence_df.loc[sorted_positions, 'sample_idx'].values.tolist()
     
     # Apply bidirectional label flip
     df_poisoned, attack_to_benign, benign_to_attack = flip_label_bidirectional(df, lowest_conf_indices, label_col)
