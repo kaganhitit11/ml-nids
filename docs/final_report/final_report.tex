@@ -1,0 +1,383 @@
+\documentclass[11pt]{article}
+
+% -------------------------
+% Preamble (packages)
+% -------------------------
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible
+}
+
+% -------------------------
+% Document
+% -------------------------
+\begin{document}
+
+\section{Introduction}
+% TODO: Write intro text.
+
+\section{Related Work / Background}
+% TODO: Write related work/background.
+
+% ============================================================
+% Section 3 and Section 4 (Copy/Paste Ready)
+% Assumes your preamble already includes: booktabs, tabularx,
+% array, amsmath, amssymb, listings, xcolor (as previously sent)
+% ============================================================
+
+\section{Experimental Setup}
+\label{sec:experimental-setup}
+
+\subsection{Datasets}
+\label{sec:datasets}
+
+In this study, we employ four widely recognized benchmark datasets for network intrusion detection systems (NIDS): UNSW-NB15, CIC-IDS2017, CUPID, and CIDDS-001, selected to enable a comprehensive evaluation across diverse network environments, attack types, and temporal characteristics. These datasets collectively represent a broad range of network architectures and traffic patterns, with UNSW-NB15 providing modern synthetic traffic with realistic background noise, CIC-IDS2017 capturing a wide spectrum of attack scenarios in a controlled experimental setting, CUPID offering real-world IoT network traffic with explicit temporal dependencies, and CIDDS-001 reflecting enterprise-scale network behavior. Together, they cover complementary aspects of the intrusion detection problem: UNSW-NB15 and CIC-IDS2017 supply large-scale, feature-rich data suitable for assessing model capacity and generalization, whereas CUPID enables the evaluation of temporally informed poisoning strategies through its timestamped flows. CIDDS-001, which is natively multi-class and subsequently converted to a binary formulation in this work, provides a rigorous test of preprocessing robustness. All four datasets are well-established benchmarks in the NIDS literature, supporting the reproducibility of experimental results.
+
+Moreover, the datasets natively encompass a diverse range of attack categories, including Denial of Service (DoS), Distributed Denial of Service (DDoS), port scanning, brute-force attacks, web-based exploits, and botnet activity. While these fine-grained labels reflect the heterogeneity of real-world adversarial behaviors, in this work all datasets are systematically processed into a unified binary classification setting (benign versus malicious), as detailed in the subsequent sections, to enable consistent evaluation across datasets.
+
+\subsubsection{General Preprocessing Pipeline}
+\label{sec:general-preprocessing}
+
+A consistent preprocessing pipeline was applied uniformly across all datasets to ensure comparability and maintain experimental rigor. For datasets with predefined training and testing partitions, namely UNSW-NB15 and CIC-IDS2017, the original splits were preserved to remain consistent with prior work and established evaluation protocols. In contrast, for datasets without predefined partitions (CUPID and CIDDS-001), a stratified 70--30 train--test split was employed, ensuring balanced class representation across both subsets. Stratified sampling was further used to preserve the proportional distribution of benign and malicious samples during partitioning, thereby preventing class imbalance from confounding performance comparisons and ensuring that evaluation metrics reflect genuine detection capability rather than dataset artifacts. All numerical features were standardized using a \texttt{StandardScaler} fitted exclusively on the training data, with the learned parameters subsequently applied to the test set to avoid data leakage. For datasets containing categorical attributes, specifically protocol, service, and state fields in UNSW-NB15 and protocol-related fields in CIDDS-001, categorical variables were converted into numerical form using a \texttt{LabelEncoder}. Missing values were addressed during the CSV loading stage by identifying and removing invalid timestamps in the CUPID dataset to preserve temporal consistency, and by imputing missing numerical feature values using forward-fill strategies where appropriate.
+
+\subsubsection{Dataset-Specific Preprocessing}
+\label{sec:dataset-specific-preprocessing}
+
+All datasets were converted into a binary classification setting to ensure consistency across experiments and facilitate uniform evaluation. In this formulation, benign traffic was encoded as class 0, while all malicious traffic, irrespective of the specific attack category, was encoded as class 1. This binary labeling scheme was preferred as it aligns with the core objective of network intrusion detection systems---namely, distinguishing normal network behavior from malicious activity---while still leveraging the underlying diversity of attack patterns present in the original datasets. Concretely, for a sample with original label $\ell$, the binarized label $y \in \{0,1\}$ is defined by
+\begin{equation}
+y \;=\; \mathbb{1}[\ell \neq \texttt{benign}],
+\label{eq:binary-labeling}
+\end{equation}
+where $\mathbb{1}[\cdot]$ denotes the indicator function, and the interpretation of ``benign'' depends on each dataset's native labeling scheme.
+
+For CIC-IDS2017, which originally provides multi-class labels with 0 denoting benign traffic and values 1--14 corresponding to different attack types, all non-benign labels were collapsed into a single malicious class via
+\begin{equation}
+y \;=\; \mathbb{1}[\ell \neq 0].
+\label{eq:cic-binary}
+\end{equation}
+Similarly, CIDDS-001, which initially encodes attack information as string-valued categories in an \texttt{attack\_type} field (e.g., \texttt{"benign"}, \texttt{"dos"}, \texttt{"port\_scan"}), required additional processing. In this case, the original attack-type labels were first preserved in a separate \texttt{original\_label} field to retain compatibility with potential future multi-class analyses. A new binary label column was then derived by mapping all non-benign entries to the malicious class, after which the original categorical attack-type field was removed from the feature set to prevent label leakage during training.
+
+In addition to label processing, dataset-specific metadata and identifier columns were carefully removed to reduce dimensionality and avoid unintended information leakage. For UNSW-NB15, this included the removal of row identifiers and explicit attack category fields that could trivially reveal class membership. In CIC-IDS2017, the target label column was excluded after binary conversion, while all flow-based statistical features were retained. For the CUPID dataset, network identifiers such as source and destination IP addresses and ports were removed to prevent models from overfitting to environment-specific endpoints; timestamp information was also excluded from the feature set except in experiments involving temporal poisoning. Finally, in CIDDS-001, auxiliary identifiers such as attack instance IDs and intermediate label columns introduced during preprocessing were removed prior to model training. Collectively, these dataset-specific preprocessing steps ensured a fair, leakage-free, and methodologically consistent experimental foundation across all evaluated datasets.
+
+\subsubsection{Dataset Statistics}
+\label{sec:dataset-stats}
+
+After applying the unified preprocessing pipeline described above, including train--test partitioning, feature standardization, label binarization, and dataset-specific column filtering, the dataset characteristics are summarized in Table~\ref{tab:dataset-stats}. Exact statistics may vary slightly depending on timestamp validation and filtering.
+
+\begin{table}[t]
+\centering
+\caption{Approximate dataset statistics after preprocessing.}
+\label{tab:dataset-stats}
+\begin{tabular}{lccccc}
+\toprule
+Dataset & Total Samples & Train Samples & Test Samples & Feature Dim. & Benign:Attack \\
+\midrule
+UNSW-NB15   & $\sim$257{,}673   & $\sim$175{,}341 & $\sim$82{,}332  & 42 (enc.) & $\sim$1:1 \\
+CIC-IDS2017 & $\sim$2{,}830{,}743 & $\sim$1{,}981{,}520 & $\sim$849{,}223 & 78        & $\sim$4:1 \\
+CUPID       & $\sim$500{,}000   & $\sim$350{,}000 & $\sim$150{,}000 & variable  & $\sim$2:1 \\
+CIDDS-001   & $\sim$1{,}000{,}000 & $\sim$700{,}000 & $\sim$300{,}000 & variable  & $\sim$5:1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Models}
+\label{sec:models}
+
+Five machine learning architectures spanning both traditional statistical methods and modern deep learning approaches are evaluated within the scope of this project in order to assess poisoning attack effectiveness and defense robustness across models with differing capacities, inductive biases, and computational characteristics. Logistic Regression (LR) and Random Forest (RF) are included as interpretable statistical baselines with well-understood theoretical properties, enabling analysis of whether poisoning attacks primarily exploit architectural limitations or reflect more fundamental vulnerabilities independent of model complexity. In parallel, three neural network architectures are considered to capture increasingly expressive, non-linear decision boundaries: a Multi-Layer Perceptron (MLP) as a canonical fully connected model, a Convolutional Neural Network (CNN) that leverages local feature correlations, and a Recurrent Neural Network (RNN) that imposes a sequential structure on feature representations. Collectively, these models embody diverse inductive biases regarding the organization of network traffic features, allowing systematic investigation of whether specific poisoning strategies disproportionately affect models that assume spatial locality, sequential dependence, or minimal structural prior knowledge.
+
+\subsubsection{Logistic Regression (LR)}
+\label{sec:lr}
+
+Logistic Regression is included as a fundamental statistical baseline for binary classification due to its interpretability and well-understood theoretical properties. As a linear model, it enables assessment of whether poisoning attacks primarily exploit architectural simplicity or introduce vulnerabilities that persist even in models with minimal representational capacity. The model computes class probabilities using a linear decision function followed by a sigmoid activation, given by
+\begin{equation}
+P(y=1 \mid x) \;=\; \sigma(w^\top x + b) \;=\; \frac{1}{1+\exp(-(w^\top x + b))},
+\label{eq:lr}
+\end{equation}
+where $w$ denotes the weight vector and $b$ the bias term. In our experiments, Logistic Regression was trained using the L-BFGS optimization algorithm with an $\ell_2$ regularization penalty of strength $C=1.0$ to prevent overfitting. The maximum number of optimization iterations was set to 1000 to ensure convergence across datasets, and a fixed random seed of 42 was used for reproducibility. Although the task is binary, a one-vs-rest formulation was retained for consistency with the underlying library implementation. Owing to its linear decision boundary and limited capacity, Logistic Regression provides a useful reference point for evaluating the susceptibility of simple classifiers to label manipulation and poisoning-induced boundary shifts.
+
+\subsubsection{Random Forest (RF)}
+\label{sec:rf}
+
+Random Forest is selected as a non-linear, ensemble-based statistical model that offers increased robustness to noise and outliers compared to linear classifiers, while retaining a degree of interpretability. Its inclusion allows examination of whether ensemble aggregation mitigates the impact of poisoning attacks or whether systematic label corruption can propagate across multiple base learners. The model consists of an ensemble of 100 decision trees trained using bootstrap aggregation, with each tree constructed on a randomly sampled subset of the training data and a randomly selected subset of features at each split. Gini impurity was used as the splitting criterion, and feature subsampling followed the standard square-root heuristic to encourage diversity among trees. Trees were grown with a minimum split size of two samples and a minimum leaf size of one, allowing fine-grained partitioning of the feature space. Bootstrap sampling was enabled, and all trees were trained in parallel using all available CPU cores. A fixed random seed of 42 was used to ensure reproducibility. While Random Forest models are generally resilient to isolated noisy labels, coordinated poisoning strategies may still influence multiple trees simultaneously, making this model an important intermediary between simple linear classifiers and fully learned neural representations.
+
+\subsubsection{Multi-Layer Perceptron (MLP)}
+\label{sec:mlp}
+
+The Multi-Layer Perceptron is employed as a representative fully connected neural network architecture, offering substantially higher expressive power than traditional statistical models while making minimal assumptions about feature structure. This model serves as a general-purpose non-linear classifier and provides a foundation for several poisoning strategies that rely on confidence estimation or loss-based sample selection. The network consists of an input layer matching the feature dimensionality, followed by a single hidden layer with 128 neurons and ReLU activation, after which dropout with probability 0.3 is applied to mitigate overfitting. The output layer comprises two neurons with softmax activation, producing class probability estimates for the binary classification task. Training was performed using the Adam optimizer with a fixed learning rate of 0.001 and a batch size of 128 samples. All MLP models were trained for three epochs using cross-entropy loss, a deliberately limited training regime chosen to reduce memorization of poisoned labels while still capturing general feature patterns. The single-hidden-layer design provides a balance between expressive capacity and training stability, making the MLP particularly suitable for studying how poisoning attacks affect decision boundaries in moderately complex neural models.
+
+\subsubsection{Convolutional Neural Network (1D-CNN)}
+\label{sec:cnn}
+
+The one-dimensional Convolutional Neural Network (1D-CNN) is included to investigate the effect of spatial inductive biases on poisoning robustness, specifically the assumption that adjacent features in network traffic representations exhibit local correlations. Although network flow features are not spatial in the traditional sense, many features (e.g., packet size statistics, inter-arrival times, and flag counts) are semantically related and often adjacent in the feature vector, making convolutional processing a plausible modeling choice. The architecture reshapes the flat input feature vector into a single-channel one-dimensional signal and applies two successive convolutional blocks. The first convolutional layer employs 64 filters with kernel size three and unit padding, followed by a ReLU activation and max pooling with kernel size two. This is followed by a second convolutional layer with 32 filters using the same kernel configuration, again followed by ReLU activation and max pooling. The resulting feature maps are flattened and passed through a dropout layer with probability 0.3 before a final fully connected layer with softmax activation produces class probabilities. Training is performed using the Adam optimizer with a fixed learning rate of 0.001, a batch size of 128, and cross-entropy loss over three training epochs. By progressively aggregating local feature patterns while reducing dimensionality through pooling, the CNN enables evaluation of whether poisoning strategies that distort localized feature profiles disproportionately affect models with convolutional inductive biases.
+
+\subsubsection{Recurrent Neural Network (RNN)}
+\label{sec:rnn}
+
+The Recurrent Neural Network (RNN) is incorporated to assess poisoning effects under a sequential inductive bias, in which the input feature vector is interpreted as an ordered sequence rather than a flat representation. While network traffic features are not inherently temporal in their indexed form, imposing a sequential structure allows the model to capture potential long-range dependencies and interactions among feature subsets that may not be easily represented by feedforward or convolutional architectures. The model reshapes the input feature vector into a sequence of fixed-length feature segments, where the sequence length and feature dimensionality are chosen to evenly partition the original input dimension. A single-layer vanilla RNN with a hidden state size of 64 processes this sequence and produces a sequence of hidden states, from which the final hidden state corresponding to the last time step is extracted as a summary representation. Dropout with probability 0.3 is applied to this representation prior to a fully connected output layer with softmax activation for binary classification. The RNN is trained using the Adam optimizer with a learning rate of 0.001, a batch size of 128, and cross-entropy loss over three epochs. This architecture provides an alternative inductive bias compared to CNNs and MLPs, enabling analysis of whether poisoning strategies exploit or interact differently with models that enforce sequential dependency structures.
+
+\subsection{Poisoning Strategies}
+\label{sec:poisoning}
+
+Data poisoning attacks aim to degrade a model's generalization performance by deliberately corrupting the training data, and in this work we implement five distinct poisoning strategies that target different aspects of the learning process. All strategies are evaluated under three poisoning rates---5\%, 10\%, and 20\% of the training set---resulting in three poisoned variants per strategy and dataset, in addition to a clean baseline. Each strategy enforces a global poisoning budget, whereby exactly a fixed proportion of training samples is selected for label manipulation regardless of the underlying selection mechanism. Denoting the poisoning rate by $p \in (0,1)$ and the number of training samples by $N$, the poisoning budget is defined as
+\begin{equation}
+B \;=\; \left\lfloor pN \right\rfloor.
+\label{eq:poison-budget}
+\end{equation}
+When the candidate set produced by a strategy is smaller than the required budget, the remaining samples are filled via uniform random selection from non-candidates.
+
+Poisoning is applied through bidirectional label flipping, such that benign samples are relabeled as malicious and malicious samples are relabeled as benign. For a selected training sample with original binary label $y \in \{0,1\}$, the poisoned label $\tilde{y}$ is given by
+\begin{equation}
+\tilde{y} \;=\; 1 - y.
+\label{eq:bidirectional-flip}
+\end{equation}
+This operation simultaneously introduces false positives and obscures true attack patterns, thereby blurring the decision boundary in both directions. For each dataset, this procedure yields a comprehensive evaluation set consisting of the clean dataset and multiple poisoned variants generated using class hiding, feature-targeted, influence-aware, and disagreement-based strategies, with an additional temporal window--based strategy applied exclusively to the CUPID dataset due to its timestamp information. In total, this design produces between 16 and 19 training datasets per original dataset, enabling systematic assessment of poisoning effectiveness across strategies, poisoning intensities, and model architectures.
+
+\subsubsection{Class Hiding}
+\label{sec:class-hiding}
+
+Class hiding is included as a baseline poisoning strategy due to its simplicity and its ability to introduce label noise without relying on domain knowledge or model-specific information. The strategy operates by randomly selecting $B$ training samples (Eq.~\ref{eq:poison-budget}) uniformly from the training set and applying bidirectional label flipping (Eq.~\ref{eq:bidirectional-flip}). Sample selection is performed uniformly at random across the training set using a fixed random seed to ensure reproducibility. Because all samples have equal probability of being poisoned, the strategy is class-agnostic and does not preferentially target either benign or attack instances. The resulting poisoned dataset simultaneously introduces false negatives by concealing attack samples and false positives by corrupting benign traffic. Although class hiding does not exploit structural weaknesses of specific models, it serves as an important reference point for assessing model sensitivity to unstructured label noise and for distinguishing the effects of random corruption from more targeted poisoning strategies.
+
+\subsubsection{Feature-Targeted Poisoning}
+\label{sec:feature-targeted}
+
+Feature-targeted poisoning leverages domain knowledge about network traffic characteristics to identify training samples that are likely to be informative for intrusion detection models and therefore high-impact poisoning targets. Instead of selecting samples uniformly at random, this strategy defines a set of dataset-specific feature predicates designed to capture common attack behaviors or anomalous traffic patterns, such as unusually short connection durations, elevated packet rates, protocol-specific flag patterns, or large payload sizes. For a given dataset, let $\mathcal{P}=\{\pi_1,\ldots,\pi_m\}$ denote the set of predicates, where each predicate $\pi_j(\cdot)$ maps a feature vector to a boolean value. The candidate set is formed as the union of all predicate matches:
+\begin{equation}
+\mathcal{C} \;=\; \bigcup_{j=1}^{m} \{\, i \in \{1,\ldots,N\} \;:\; \pi_j(x_i)=\texttt{true} \,\}.
+\label{eq:predicate-union}
+\end{equation}
+From $\mathcal{C}$, samples are selected up to the global poisoning budget $B$; if $|\mathcal{C}| \ge B$, a subset of size $B$ is sampled uniformly from $\mathcal{C}$, whereas if $|\mathcal{C}| < B$, all candidates are included and the remaining $B-|\mathcal{C}|$ samples are drawn uniformly from $\{1,\ldots,N\}\setminus \mathcal{C}$. Bidirectional label flipping is then applied to the selected instances (Eq.~\ref{eq:bidirectional-flip}). By focusing on samples exhibiting features that are both semantically meaningful and highly discriminative for attack detection, this strategy aims to distort the association between characteristic attack patterns and malicious labels. As a result, models trained on the poisoned data may learn incorrect correlations, leading to systematic misclassification of future traffic that exhibits similar feature profiles and effectively creating blind spots in the learned detection logic. The dataset-specific feature predicates used in this study are summarized in Table~\ref{tab:feature-predicates}.
+
+\begin{table}[t]
+\centering
+\caption{Dataset-specific feature predicates used for feature-targeted poisoning.}
+\label{tab:feature-predicates}
+\begin{tabularx}{\linewidth}{l l l X}
+\toprule
+Dataset & Predicate Name & Features Used & Rationale \\
+\midrule
+UNSW-NB15 & tcp\_short & proto, dur & TCP scanning attacks often exhibit short connection durations \\
+UNSW-NB15 & http\_service & service & HTTP is a common attack surface \\
+UNSW-NB15 & high\_rate & rate & DoS/DDoS attacks typically generate elevated packet rates \\
+\midrule
+CIC-IDS2017 & short\_high\_packets & Flow Duration, Total Fwd Packets & Scanning and flooding behavior \\
+CIC-IDS2017 & syn\_pattern & SYN Flag Count & Indicative of SYN flood attacks \\
+CIC-IDS2017 & large\_packets & Average Packet Size & Large payload or exfiltration-like behavior \\
+\midrule
+CUPID & short\_high\_volume & Flow Duration, Total Fwd Packets & IoT-specific burst and attack patterns \\
+CUPID & syn\_pattern & SYN Flag Count & DDoS indicator \\
+\midrule
+CIDDS-001 & tcp\_short & proto, duration & Fast connection scanning \\
+CIDDS-001 & high\_packets & packets & Traffic volume anomalies \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsubsection{Influence-Aware (Confidence-Based) Poisoning}
+\label{sec:influence-aware}
+
+Influence-aware poisoning targets training samples that are most influential for shaping the model's decision boundary, based on the observation that samples with low prediction confidence tend to lie near regions of classification uncertainty. In this strategy, a baseline Multi-Layer Perceptron (MLP) is used to estimate prediction confidence for each training instance, with the architecture described in Section~\ref{sec:mlp} and chosen for its computational efficiency and sufficient expressive capacity. The baseline MLP is trained for two epochs on the clean training data using the Adam optimizer with a learning rate of 0.001 and a batch size of 128. After training, confidence scores are computed for all training samples as the maximum predicted class probability:
+\begin{equation}
+\mathrm{conf}(x_i) \;=\; \max_{c \in \{0,1\}} \; p_\theta(y=c \mid x_i),
+\label{eq:confidence}
+\end{equation}
+where $p_\theta(\cdot\mid x)$ denotes the model's softmax output. Samples are ranked in ascending order of $\mathrm{conf}(x_i)$, and the lowest $B$ samples (Eq.~\ref{eq:poison-budget}) are selected for poisoning; bidirectional label flipping is then applied (Eq.~\ref{eq:bidirectional-flip}). By corrupting instances that lie close to the decision boundary, this strategy forces the model to shift or distort its boundary during retraining, potentially creating localized regions of systematic misclassification.
+
+\subsubsection{Disagreement-Based Poisoning}
+\label{sec:disagreement}
+
+Disagreement-based poisoning exploits instability in the learning process by targeting samples on which multiple independently trained models produce conflicting predictions. The underlying hypothesis is that such samples represent ambiguous regions of the feature space or areas where the learning algorithm is sensitive to initialization and stochasticity. Two MLP models with identical architectures are trained independently for two epochs on the clean training data using different random seeds. For each training sample $x_i$, let $\hat{y}_i^{(1)}$ and $\hat{y}_i^{(2)}$ denote the predicted labels from the two models, and let $\mathrm{conf}^{(1)}(x_i)$ and $\mathrm{conf}^{(2)}(x_i)$ denote their confidence scores (Eq.~\ref{eq:confidence}). Candidate samples are defined as those for which the predicted labels disagree:
+\begin{equation}
+\mathcal{C}_{\mathrm{dis}} \;=\; \{\, i \;:\; \hat{y}_i^{(1)} \neq \hat{y}_i^{(2)} \,\}.
+\label{eq:dis-candidates}
+\end{equation}
+These candidates are ranked by a disagreement score, defined as the absolute difference in confidence:
+\begin{equation}
+s_i \;=\; \left|\mathrm{conf}^{(1)}(x_i) - \mathrm{conf}^{(2)}(x_i)\right|.
+\label{eq:dis-score}
+\end{equation}
+The top $B$ candidates by $s_i$ are selected for poisoning; if $|\mathcal{C}_{\mathrm{dis}}| < B$, the remaining budget is filled by uniform random sampling from non-candidates. Bidirectional label flipping is then applied (Eq.~\ref{eq:bidirectional-flip}). By poisoning samples that already induce disagreement between models, this strategy amplifies learning instability and can lead to inconsistent decision boundaries, particularly in regions where benign and malicious behaviors overlap.
+
+\subsubsection{Temporal Window Poisoning}
+\label{sec:temporal-window}
+
+Temporal window poisoning is designed to exploit the temporal structure inherent in network traffic and is applicable exclusively to the CUPID dataset, which includes reliable timestamp information. The strategy operates under the premise that anomalous or attack-related traffic often manifests as bursts or deviations within localized time windows. Network flows are first sorted chronologically, and samples with invalid timestamps are removed to preserve temporal integrity. The timeline is then segmented into fixed-duration windows of five minutes. For each window $w$, summary statistics are computed over a set of temporal anomaly features $\mathcal{F}$ (e.g., flow duration, packet counts, and byte volumes), including the mean $\mu_{w,f}$ and standard deviation $\sigma_{w,f}$ for each feature $f \in \mathcal{F}$. Each sample $x_i$ belonging to window $w(i)$ is assigned a deviation score based on standardized distances:
+\begin{equation}
+d_i \;=\; \sum_{f \in \mathcal{F}} \left| \frac{x_{i,f} - \mu_{w(i),f}}{\sigma_{w(i),f} + \varepsilon} \right|,
+\label{eq:deviation-score}
+\end{equation}
+where $\varepsilon>0$ is a small constant to ensure numerical stability. Samples are ranked globally by $d_i$, and the top $B$ highest-deviation samples are selected and subjected to bidirectional label flipping (Eq.~\ref{eq:bidirectional-flip}). By targeting traffic that deviates strongly from local temporal norms, this strategy aims to corrupt the association between time-localized anomalies and malicious behavior, potentially degrading the model's ability to detect bursty or time-sensitive attacks.
+
+\subsection{Training Procedures}
+\label{sec:training}
+
+Training procedures differ between neural network models and statistical models due to their distinct optimization mechanisms and convergence behaviors. Accordingly, separate but internally consistent training pipelines were adopted for each model family to ensure fair comparison across poisoning strategies and datasets.
+
+\subsubsection{Neural Network Models (MLP, RNN, CNN)}
+\label{sec:training-neural}
+
+All neural network models (MLP, 1D-CNN, and RNN) were trained using a unified optimization and evaluation pipeline. Training was performed using the Adam optimizer with default momentum parameters $\beta_1=0.9$, $\beta_2=0.999$, and numerical stability constant $\epsilon=10^{-8}$. A fixed learning rate of 0.001 and a batch size of 128 samples were used across all experiments. Models were trained for three epochs using the cross-entropy loss function
+\begin{equation}
+\mathcal{L}(\theta) \;=\; -\frac{1}{N}\sum_{i=1}^{N} \sum_{c=1}^{C} y_{i,c}\log(\hat{y}_{i,c}),
+\label{eq:cross-entropy}
+\end{equation}
+where $N$ denotes the batch size, $C=2$ is the number of classes, $y_{i,c}$ is the one-hot encoded ground-truth label, and $\hat{y}_{i,c}$ is the predicted probability for class $c$. During training, mini-batches were processed in shuffled order, gradients were computed via backpropagation, and parameters were updated after each batch using Adam. Following completion of the final epoch, models were evaluated on the held-out test set without gradient computation, and standard performance metrics including accuracy, confusion matrices, and class-specific measures were recorded.
+
+Regularization was applied exclusively through dropout with probability 0.3 during training, which was disabled at evaluation time. No explicit weight decay or additional $\ell_2$ regularization was employed. The choice to limit training to three epochs was deliberate, as extended training increases the likelihood of memorization of poisoned labels, which can artificially amplify the observed impact of poisoning attacks. All neural models were trained using single-precision floating-point arithmetic (FP32) on a CUDA-enabled GPU when available, otherwise on CPU.
+
+\subsubsection{Statistical Models (LR, RF)}
+\label{sec:training-statistical}
+
+Statistical models were trained using the standard fitting procedures provided by the scikit-learn library, reflecting their fundamentally different optimization paradigms. Logistic Regression models were optimized using the L-BFGS solver with $\ell_2$ regularization and a maximum of 1000 iterations, although convergence was typically achieved well before this limit. Random Forest models were trained as ensembles of 100 decision trees, each constructed independently using bootstrap sampling and greedy split selection based on Gini impurity. Feature subsampling and bootstrap aggregation were employed to encourage ensemble diversity, and training was parallelized across all available CPU cores to improve efficiency. Unlike neural networks, statistical models do not rely on epoch-based gradient descent; Logistic Regression converges through quasi-Newton optimization, while Random Forest training proceeds through recursive tree construction. These distinct training dynamics enable analysis of poisoning effects across fundamentally different learning mechanisms.
+
+\subsection{Defense Mechanisms}
+\label{sec:defenses}
+
+To mitigate the impact of poisoning attacks on model training, we implement two complementary defense strategies: \emph{removal} and \emph{reweighting}. Both defenses identify suspicious training samples based on their loss values under a reference model, motivated by the assumption that poisoned or mislabeled samples tend to incur disproportionately high loss. The two strategies differ in how such samples are handled, either by excluding them entirely from training or by reducing their influence while retaining them in the dataset.
+
+\subsubsection{Removal Defense}
+\label{sec:defense-removal}
+
+The removal defense is motivated by the observation that high-loss samples are more likely to be corrupted, mislabeled, or adversarial, and that eliminating such samples can effectively clean the training data. For neural network models, per-sample loss estimation is performed using a temporary MLP trained on the poisoned dataset for two epochs. After this brief training phase, per-sample cross-entropy losses $\ell_i$ are computed for each training instance. To prevent bias arising from class imbalance, losses are processed in a class-aware manner: within each class $c \in \{0,1\}$, samples are ranked by loss and the top $p\%$ highest-loss samples are identified for removal. Denoting the index set of class-$c$ samples by $\mathcal{I}_c$ and its size by $|\mathcal{I}_c|$, the class-wise removal count is
+\begin{equation}
+B_c \;=\; \left\lfloor p \, |\mathcal{I}_c| \right\rfloor,
+\label{eq:class-aware-budget}
+\end{equation}
+and the removed set for class $c$ is defined as the $B_c$ largest-loss samples in $\mathcal{I}_c$. A new training dataset is then constructed excluding these samples, and the final model (matching the original task architecture) is trained on the cleaned dataset using the standard three-epoch procedure.
+
+For statistical models, per-sample loss estimation is computed using stratified $K$-fold cross-validation with $K=4$ to reduce memorization bias. In each fold, the model is trained on the training split and evaluated on the held-out split, producing out-of-fold predicted probabilities $\hat{p}_i = P_\theta(y=1\mid x_i)$. A cross-entropy loss is then computed per sample as
+\begin{equation}
+\ell_i \;=\; -\Big(y_i \log(\hat{p}_i+\varepsilon) + (1-y_i)\log(1-\hat{p}_i+\varepsilon)\Big),
+\label{eq:oof-loss}
+\end{equation}
+with a small $\varepsilon$ for numerical stability. Class-aware removal (Eq.~\ref{eq:class-aware-budget}) is then applied prior to retraining the final model on the filtered dataset. Overall, the removal defense is expected to reduce the influence of poisoned samples at the cost of reducing the effective training set size, which may in turn affect generalization performance.
+
+\subsubsection{Reweighting Defense}
+\label{sec:defense-reweighting}
+
+The reweighting defense follows the same underlying motivation as removal---namely, that high-loss samples are more likely to be adversarial---but seeks to mitigate their impact without discarding data entirely. For neural network models, the same temporary MLP-based loss estimation procedure used in the removal defense is employed to obtain per-sample losses $\ell_i$, which are then processed in a class-aware manner to identify the top $p\%$ highest-loss samples per class. Instead of removing these samples, we assign them a reduced weight $\alpha=0.1$, while all other samples retain weight 1.0. Denoting the weight for sample $i$ by $w_i$, the weighted training objective becomes
+\begin{equation}
+\mathcal{L}_w(\theta) \;=\; \frac{1}{\sum_{i=1}^{N} w_i}\sum_{i=1}^{N} w_i \, \ell_i(\theta),
+\label{eq:weighted-loss}
+\end{equation}
+where $\ell_i(\theta)$ is the per-sample cross-entropy loss (Eq.~\ref{eq:cross-entropy} without batch averaging). The final model is then trained for three epochs using this weighted objective, thereby reducing the influence of suspicious samples while preserving potentially informative data.
+
+For statistical models, per-sample loss values are estimated using four-fold stratified cross-validation (Eq.~\ref{eq:oof-loss}), after which class-aware sample weights are assigned following the same scheme. Model training then proceeds using the weighted fitting interface provided by the learning algorithm. The choice of $\alpha=0.1$ reflects a compromise between completely ignoring suspicious samples (equivalent to removal) and treating them equally to clean samples, enabling partial retention of information while substantially limiting their impact on the learned decision boundary.
+
+\section{Evaluation}
+\label{sec:evaluation}
+
+This section presents the evaluation methodology, performance metrics, and experimental scope used to assess the impact of poisoning attacks and the effectiveness of the proposed defense mechanisms. The evaluation is designed to capture not only overall classification performance, but also the specific error modes induced by poisoning, with particular emphasis on attack detection reliability.
+
+\subsection{Evaluation Methodology}
+\label{sec:eval-method}
+
+The experimental evaluation follows a structured protocol aimed at analyzing three core aspects: baseline performance on clean (unpoisoned) datasets, degradation in performance under different poisoning strategies and poisoning rates, and recovery of performance when defenses are applied. For each dataset--model pair, a clean baseline is first established. Poisoned variants of the training data are then generated according to the strategies described in Section~\ref{sec:poisoning}, and models are retrained and evaluated under identical conditions. Finally, defense mechanisms are applied to the poisoned datasets, and models are retrained to quantify performance recovery relative to both poisoned and clean baselines. To enable systematic analysis across the large experimental space, all evaluation outputs are recorded in a structured JSON format. Each result file stores the dataset, model, poisoning strategy, poisoning rate, defense configuration, test-set performance metrics, confusion matrix statistics, and relevant training metadata. This standardized storage format facilitates automated aggregation, comparison, and post hoc analysis across datasets, models, and attack scenarios.
+
+\subsection{Evaluation Metrics}
+\label{sec:eval-metrics}
+
+Model performance is evaluated using a suite of complementary metrics derived from the confusion matrix, rather than relying solely on overall accuracy. While accuracy is commonly reported, it can be misleading in the presence of class imbalance or asymmetric error costs, both of which are characteristic of network intrusion detection settings. For example, a classifier that predicts all traffic as benign may achieve high accuracy on benign-dominated datasets while completely failing to detect attacks.
+
+We report the full binary confusion matrix consisting of true negatives (TN), false positives (FP), false negatives (FN), and true positives (TP), where benign traffic corresponds to the negative class and malicious traffic corresponds to the positive class:
+\begin{equation}
+\begin{bmatrix}
+\mathrm{TN} & \mathrm{FP} \\
+\mathrm{FN} & \mathrm{TP}
+\end{bmatrix}.
+\label{eq:conf-matrix}
+\end{equation}
+Overall accuracy is computed as
+\begin{equation}
+\mathrm{Acc} \;=\; \frac{\mathrm{TP}+\mathrm{TN}}{\mathrm{TP}+\mathrm{TN}+\mathrm{FP}+\mathrm{FN}}.
+\label{eq:accuracy}
+\end{equation}
+Class-specific precision, recall, and F1-score for the malicious (attack) class are computed as
+\begin{align}
+\mathrm{Precision}_{1} \;=\; \frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FP}}, 
+\qquad
+\mathrm{Recall}_{1} \;=\; \frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FN}},
+\label{eq:prec-recall}
+\\
+\mathrm{F1}_{1} \;=\; 2 \cdot \frac{\mathrm{Precision}_{1}\cdot \mathrm{Recall}_{1}}{\mathrm{Precision}_{1}+\mathrm{Recall}_{1}}.
+\label{eq:f1}
+\end{align}
+In NIDS applications, false negatives (missed attacks) are typically more costly than false positives (false alarms). Accordingly, we emphasize attack recall (true positive rate) and the false negative rate,
+\begin{equation}
+\mathrm{FNR} \;=\; \frac{\mathrm{FN}}{\mathrm{FN}+\mathrm{TP}},
+\label{eq:fnr}
+\end{equation}
+when interpreting poisoning impact and defense effectiveness. In addition to per-class metrics, macro-averaged and weighted-averaged scores are reported to account for both balanced and imbalanced class distributions. Macro averages treat benign and attack classes equally, whereas weighted averages reflect the underlying class prevalence, jointly providing a detailed view of how poisoning attacks affect different error modes and how defenses alter these trade-offs.
+
+\subsection{Interpretation of Evaluation Results}
+\label{sec:eval-interpret}
+
+When analyzing experimental results, poisoning success is primarily indicated by a reduction in attack recall, an increase in the false negative rate, and a corresponding decrease in the F1-score of the attack class. In some cases, poisoning may also increase false positives, reducing attack precision and signaling confusion between benign and malicious traffic. Defense effectiveness is assessed by the extent to which these metrics recover toward clean baseline values, particularly with respect to attack recall and false negative rate. Conversely, overly aggressive defenses may manifest as inflated false positive rates, indicating a trade-off between security sensitivity and operational usability. These interpretative principles are applied consistently across all reported experiments.
+
+\subsection{Experimental Scale and Coverage}
+\label{sec:eval-scale}
+
+The evaluation encompasses four benchmark datasets (UNSW-NB15, CIC-IDS2017, CUPID, and CIDDS-001), five learning models (Logistic Regression, Random Forest, MLP, CNN, and RNN), and multiple poisoning strategies, including class hiding, feature-targeted poisoning, influence-aware poisoning, disagreement-based poisoning, and temporal window poisoning (for CUPID). Each poisoning strategy is evaluated at three poisoning rates (5\%, 10\%, and 20\%), both with and without defenses. Two defense mechanisms (removal and reweighting) are applied alongside a clean baseline with no poisoning. This results in several hundred distinct experimental configurations, providing comprehensive coverage of attack surfaces, model architectures, and defensive behaviors.
+
+\section{Results}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{figures/temporal_attack_macro_f1.pdf}
+    \caption{Temporal Window Poisoning Macro F1 for CUPID dataset}
+    \label{fig:temporal-window-cupid-f1}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{figures/defense_effectiveness_macro_f1_1D-CNN.pdf}
+    \caption{Macro F1 results for 1D-CNN}
+    \label{fig:macrof1-cnn}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{figures/defense_effectiveness_macro_f1_RNN.pdf}
+    \caption{Macro F1 results for RNN}
+    \label{fig:macrof1-rnn}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{figures/defense_effectiveness_macro_f1_MLP.pdf}
+    \caption{Macro F1 results for Multilayer Perceptron}
+    \label{fig:macrof1-mlp}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{figures/defense_effectiveness_macro_f1_LR.pdf}
+    \caption{Macro F1 results for Logistic Regression}
+    \label{fig:macrof1-lr}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{figures/defense_effectiveness_macro_f1_RF.pdf}
+    \caption{Macro F1 results for Random Forest}
+    \label{fig:macrof1-rf}
+\end{figure}
+\section{Discussion}
+% TODO: discussion.
+
+\section{References}
+% TODO: references / bibliography.
+
+\end{document}
