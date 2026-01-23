@@ -1,18 +1,41 @@
-\documentclass[11pt]{article}
+\documentclass[10pt]{article}
 
-% -------------------------
-% Preamble (packages)
-% -------------------------
+% ---------- Page + spacing ----------
 \usepackage[margin=1in]{geometry}
+\usepackage{setspace}
+\singlespacing
+
+% ---------- Cohesive Times-like font ----------
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\usepackage{amsmath, amssymb}
+\usepackage{microtype}
+
+% ---------- Paragraph formatting ----------
+\setlength{\parindent}{1.2em}
+\setlength{\parskip}{0.40em}
+
+% ---------- Tables ----------
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{array}
+\usepackage{multirow}
+\usepackage[table]{xcolor}
+\usepackage{float}
+\usepackage{caption}
+
+% ---------- Math ----------
+\usepackage{amsmath, amssymb}
+
+% ---------- Lists ----------
+\usepackage{enumitem}
+\setlist[itemize]{noitemsep, topsep=2pt, leftmargin=*}
+
+% ---------- Graphics ----------
+\usepackage{graphicx}
+
+% ---------- Code formatting ----------
 \usepackage{listings}
 \usepackage{xcolor}
-\usepackage{graphicx}
 
 \lstset{
   basicstyle=\ttfamily\small,
@@ -21,16 +44,140 @@
   columns=fullflexible
 }
 
-% -------------------------
-% Document
-% -------------------------
+% ---------- Links ----------
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+% --- Number the bibliography section in article class ---
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd{\thebibliography}{\section*{\refname}}{\section{\refname}}{}{}
+\makeatother
+
+\renewcommand{\refname}{References} % change title from "References"
+
+% ---------- Title block control ----------
+\usepackage{titling}
+\setlength{\droptitle}{-1.8cm} % adjust -1.4..-2.2 if needed
+
+\pretitle{\begin{center}\Large\bfseries}
+\posttitle{\end{center}\vspace{-0.3em}}
+\preauthor{\begin{center}\normalsize}
+\postauthor{\end{center}\vspace{-3.6em}}
+\predate{\begin{center}\normalsize}
+\postdate{\end{center}\vspace{-1.0em}}
+\date{}
+
+% ---------- Section formatting ----------
+\usepackage{titlesec}
+\titleformat{\section}{\bfseries\large}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\bfseries\normalsize}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\bfseries\normalsize}{\thesubsubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{0.8em}{0.35em}
+\titlespacing*{\subsection}{0pt}{0.55em}{0.25em}
+\titlespacing*{\subsubsection}{0pt}{0.45em}{0.2em}
+
+% ---------- Table column helper ----------
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\title{Cross Dataset Evaluation of Robustness in Machine Learning Based Intrusion Detection Under Structured Label Poisoning}
+\author{O\u{g}uz Ka\u{g}an Hitit \quad Damla G\"org\"ul\"u \quad Eren Yavuz \quad Hakan Çapuk \quad Rana Ataseven}
+
 \begin{document}
+\maketitle
+
+\begin{abstract}
+Machine learning-based Network Intrusion Detection Systems (NIDS) are increasingly deployed to protect critical infrastructure, yet their vulnerability to training-time attacks remains poorly understood. This work presents the first comprehensive cross-dataset evaluation of label poisoning attacks against ML-based NIDS, systematically studying how adversaries who corrupt training labels can blind intrusion detectors while maintaining deceptively high overall accuracy---a phenomenon we term the \emph{accuracy illusion}. We evaluate five model architectures (CNN, RNN, MLP, Logistic Regression, Random Forest) across four benchmark datasets (CIC-IDS2017, UNSW-NB15, CUPID, CIDDS-001) under five poisoning strategies at varying intensities (5\%, 10\%, 20\%). Our experiments reveal alarming vulnerabilities: on CIC-IDS2017, a simple class hiding attack at 20\% poisoning reduced attack recall from 98\% to 0\% while accuracy remained above 80\%. We find that dataset class imbalance critically determines vulnerability---balanced datasets resist poisoning while imbalanced datasets enable complete detection failure. Surprisingly, simple random label flipping outperforms sophisticated targeted attacks. We evaluate removal and reweighting defenses, documenting their architecture-dependent effectiveness and ultimate failure at high poisoning rates. We also report a significant baseline failure on CIDDS-001, where extreme class imbalance (367:1) renders standard models non-functional as intrusion detectors even on clean data---a cautionary finding for practitioners. Our results establish that accuracy alone cannot assess NIDS health, and we provide concrete recommendations for robust deployment.
+\end{abstract}
 
 \section{Introduction}
-% TODO: Write intro text.
 
-\section{Related Work / Background}
-% TODO: Write related work/background.
+In today's world, edge devices are interconnected over sophisticated networks all around the globe. These networks move trillions of packets every day with various intentions---such as web browsing, video and audio streaming, file transfers, remote administration, financial transactions, and sensor data collection---among many others.
+
+However, because any device connected to the World Wide Web can be addressed, anybody---especially intruders---can send malicious packets or execute harmful activities, for example jamming normal traffic by launching denial-of-service attacks. Such incidents can have serious consequences, ranging from service outages and data breaches to damage that can affect critical infrastructure and even national-level organizations.
+
+Thus, in order to preserve the safety of both communicating parties, packets must be investigated thoroughly before being accepted as valuable information bits. For this investigation, network intrusion detection systems (NIDS) have been created. NIDS inspect network traffic and attempt to classify behaviors into benign and malicious, providing protection against potential threats. However, the success of these systems is not trivial. Building an effective NIDS requires detailed experiments, wise design choices, and a deep understanding of everyday network activities carried out by security professionals.
+
+In practice, NIDS performance is often framed in terms of two types of errors. A false negative---where the system fails to detect an ongoing attack---can allow intruders to compromise systems, steal data, or disrupt services with little or no response. A false positive---where the system flags legitimate traffic as malicious---can overwhelm analysts with alerts, leading to alert fatigue and potentially causing real attacks to be missed in the noise. Balancing these errors is a central challenge in NIDS design and deployment.
+
+With the increased availability of large datasets and advances in machine learning techniques, efforts on NIDS have intensified. Researchers commonly evaluate their approaches on benchmark datasets such as KDD Cup 99 \cite{kdd99}, NSL-KDD \cite{tavallaee2009}, UNSW-NB15 \cite{moustafa2015unsw}, and CIC-IDS2017 \cite{sharafaldin2018}, which provide labeled examples of normal and malicious traffic. Machine learning models---including logistic regression, random forests, and neural networks---are trained on these labeled datasets to distinguish benign from malicious traffic. However, this reliance on labeled training data introduces a critical vulnerability: if an adversary can corrupt the labels during data collection or annotation, the resulting model may learn to misclassify traffic in ways that benefit the attacker.
+
+This threat, known as \emph{label poisoning} or \emph{label flipping}, is a training-time attack where an adversary manipulates a fraction of the training labels without altering the underlying features. Unlike adversarial examples that perturb inputs at inference time, label poisoning corrupts the model before deployment. The attack can be \emph{untargeted}---randomly flipping labels to degrade overall accuracy---or \emph{targeted}, where specific attack classes are relabeled as benign to create blind spots in the detector. Targeted label poisoning is particularly dangerous because it allows adversaries to selectively suppress detection of high-value intrusions while maintaining acceptable overall accuracy, making the attack difficult to notice.
+
+Despite the operational relevance of such structured label-poisoning threats, existing evaluations are often limited to single datasets or narrow model classes, leaving cross-dataset vulnerability poorly characterized. Prior work has demonstrated label poisoning in image classification and spam filtering, but systematic studies on NIDS across diverse network traffic distributions remain scarce.
+
+In this work, we address this gap through a comprehensive cross-dataset study of targeted label-poisoning attacks and practical defenses for NIDS. We evaluate four complementary benchmark datasets---UNSW-NB15, CIC-IDS2017, CUPID, and CIDDS-001---selected to represent diverse network environments, attack distributions, and class imbalance characteristics. We employ a representative model suite spanning traditional machine learning (Logistic Regression, Random Forest) and neural architectures (MLP, CNN, and RNN) to understand how model complexity affects vulnerability. Under bounded label-flip budgets (5\%, 10\%, 20\%), we implement five structured poisoning strategies: class hiding (random label flipping), feature-targeted poisoning, influence-aware poisoning, disagreement-based poisoning, and temporal window poisoning (applied exclusively to CUPID due to its temporal structure). We further evaluate removal and reweighting defenses to characterize their effectiveness across attack intensities.
+
+Our experiments reveal alarming vulnerabilities. On CIC-IDS2017, a class hiding attack with only 10\% label poisoning reduced attack recall from 98\% to 16\%, and at 20\% poisoning, the model achieved 0\% attack detection---complete failure to identify any malicious traffic. Critically, overall accuracy remained above 80\% in these scenarios, creating an \emph{accuracy illusion} where the model appears functional but is effectively blind to attacks. Defense mechanisms showed limited effectiveness: removal defense provided some protection at low poisoning rates but collapsed at higher rates, while reweighting defenses were largely ineffective across all scenarios. We also observed significant dataset-specific vulnerability patterns, with CIC-IDS2017 being most susceptible and UNSW-NB15 showing greater resilience.
+
+The contributions of this work are:
+\begin{itemize}
+\item \textbf{Systematic cross-dataset evaluation}: We provide the first comprehensive study of label poisoning across four diverse NIDS benchmark datasets with consistent experimental methodology.
+\item \textbf{Attack strategy comparison}: We implement and compare five structured poisoning strategies, identifying class hiding as the most effective attack and characterizing the conditions under which each strategy succeeds.
+\item \textbf{Defense analysis}: We evaluate practical training-time defenses (removal and reweighting) and document their failure modes at higher poisoning rates.
+\item \textbf{The accuracy illusion}: We identify and characterize the dangerous phenomenon where poisoned models maintain high overall accuracy while completely failing to detect attacks---a critical finding for practitioners who rely on accuracy as a health metric.
+\end{itemize}
+
+\section{Related Work}
+
+This section reviews the literature that motivated and informed our study, organized into four thematic areas: (1) the evolution of network intrusion detection systems and benchmark datasets, (2) foundational research on data poisoning attacks, (3) label-flipping as a specific and effective attack vector, and (4) defense mechanisms proposed to mitigate such threats. By tracing the development of these research threads, we identify the gaps that our cross-dataset evaluation aims to address.
+
+\subsection{Network Intrusion Detection Systems and Benchmark Datasets}
+
+The need for automated network security monitoring emerged alongside the rapid expansion of the Internet in the 1990s. One of the earliest and most influential systems was \textbf{Bro} (now known as Zeek), developed by Paxson in 1999 \cite{paxson1999}. Bro introduced a novel architecture that separated the low-level event engine from a high-level policy script interpreter, enabling flexible, protocol-aware analysis of network traffic in real time. This design philosophy---combining deep packet inspection with scriptable detection logic---established a template that many subsequent systems would follow.
+
+As machine learning techniques matured, researchers began applying them to intrusion detection, hoping to automate the discovery of attack patterns and reduce reliance on hand-crafted signatures. However, Sommer and Paxson (2010) \cite{sommer2010outside} offered a critical assessment of this trend in their influential paper ``Outside the Closed World.'' They argued that many ML-based NIDS evaluations suffered from unrealistic assumptions: closed-world datasets with artificial attack-to-benign ratios, lack of concept drift, and evaluation metrics that failed to capture operational costs. Their work called for more rigorous, realistic evaluation practices---a challenge that remains relevant today and directly motivates our cross-dataset methodology.
+
+The quality and representativeness of benchmark datasets has been a persistent concern. The \textbf{KDD Cup 1999} dataset \cite{kdd99}, derived from the 1998 DARPA intrusion detection evaluation, became the de facto standard for over a decade despite well-documented limitations including redundant records, unrealistic traffic distributions, and outdated attack patterns. Tavallaee et al. (2009) \cite{tavallaee2009} addressed some of these issues by creating the \textbf{NSL-KDD} dataset, which removed duplicate records and rebalanced the data, though fundamental concerns about age and realism remained.
+
+More recent efforts have produced datasets that better reflect contemporary network environments, including UNSW-NB15 \cite{moustafa2015unsw}, CIC-IDS2017 \cite{sharafaldin2018}, CUPID \cite{lawrence2022cupid}, and CIDDS-001 \cite{cidds}. Recent survey work by Khraisat et al. (2019) \cite{khraisat2019} and Chou and Jiang (2021) \cite{chou2021} has synthesized this landscape, cataloging available datasets, comparing detection techniques, and identifying open challenges. Goldschmidt and Chudá (2025) \cite{goldschmidt2025survey} further systematized dataset limitations, providing recommendations that guided our selection of complementary benchmarks. A key insight from this literature is that conclusions drawn from a single dataset rarely generalize---motivating our decision to evaluate across multiple diverse benchmarks with different traffic characteristics, attack distributions, and class imbalance profiles.
+
+\subsection{Data Poisoning Attacks}
+
+While considerable effort has focused on building accurate intrusion detection models, less attention has been paid to their robustness against adversarial manipulation of training data. \textbf{Data poisoning} refers to attacks where an adversary corrupts the training set to degrade model performance or induce targeted misclassifications at inference time.
+
+The seminal work by \textbf{Biggio, Nelson, and Laskov (2012)} \cite{biggio2012} established the theoretical and algorithmic foundations for poisoning attacks against Support Vector Machines. They demonstrated that an adversary could craft malicious training points using gradient ascent on the validation error surface, significantly increasing the classifier's test error. Crucially, their attack assumed only that the adversary could inject data into the training pipeline---a realistic threat model for systems that collect training data from untrusted sources such as honeypots or user-reported samples. This work showed that the standard machine learning assumption of well-behaved, i.i.d. training data does not hold in security-sensitive settings.
+
+Building on this foundation, \textbf{Steinhardt, Koh, and Liang (2017)} \cite{steinhardt2017certified} developed a theoretical framework for certified defenses against data poisoning. Their key contribution was constructing upper bounds on the worst-case loss a defender can suffer against any poisoning attack within a specified budget. They showed that defense effectiveness is highly dataset-dependent: while MNIST and Dogfish image datasets proved resilient (achieving at most 4\% error even with 30\% poisoned data under an oracle defense), the IMDB sentiment corpus was driven from 12\% to 23\% error with only 3\% poisoned data. This finding---that high-dimensional datasets with many irrelevant features are more vulnerable---has important implications for network intrusion detection, where feature spaces are often large and heterogeneous.
+
+Several comprehensive surveys have synthesized the growing literature on poisoning attacks. \textbf{Wang et al. (2022)} \cite{wang2023threats} provide an extensive taxonomy covering both traditional machine learning and deep learning systems. They categorize attacks by adversarial goals (untargeted vs. targeted), knowledge assumptions (white-box, gray-box, black-box), and attack mechanisms (label poisoning, feature poisoning, model poisoning). Their presentation of the bilevel optimization framework---where the outer optimization crafts poisoned samples to maximize validation loss while the inner optimization trains the victim model---provides a unified lens for understanding diverse attack strategies. More recently, \textbf{Zhao et al. (2025)} \cite{zhao2025} extended this analysis specifically to deep learning, discussing emerging threats to large language models and identifying open challenges in defense design.
+
+\subsection{Label-Flipping Attacks}
+
+Among poisoning strategies, \textbf{label-flipping} (also called label poisoning) stands out for its simplicity and effectiveness. In this attack, the adversary corrupts only the labels of training samples while leaving the features unchanged. Despite its simplicity, label-flipping can cause substantial damage, particularly when applied in a targeted manner---flipping labels of a specific class to create blind spots in the classifier.
+
+\textbf{Jebreel et al. (2022)} \cite{jebreel2022} studied label-flipping in the context of federated learning, where malicious participants can poison their local data before contributing model updates. They demonstrated that label-flipping is both easy to perform and difficult to detect, significantly degrading accuracy on the source class (the class whose labels are flipped). Their analysis revealed that the attack's impact scales with both the proportion of malicious participants and the number of flipped samples. While their proposed defense targets federated settings specifically, their characterization of label-flipping's effectiveness applies broadly.
+
+Chang, Dobbie, and Wicker (2023) \cite{chang2023fastflip} developed efficient algorithms for label-flipping attacks on tabular data, demonstrating that such attacks remain potent even when the adversary operates under tight computational or query budgets. Their work is particularly relevant to NIDS, which typically process tabular flow-level features.
+
+A critical insight from this literature is that label-flipping attacks can be \textbf{targeted}---selectively flipping labels of attack traffic to benign, thereby suppressing detection of specific intrusion types while maintaining acceptable overall accuracy. This ``accuracy illusion'' makes the attack particularly dangerous in operational settings where defenders may monitor aggregate metrics without examining per-class performance.
+
+\subsection{Defense Mechanisms}
+
+Defending against data poisoning requires identifying and mitigating the influence of corrupted samples before or during training. The literature has explored several approaches:
+
+\textbf{Outlier removal} is perhaps the most intuitive defense: identify samples that deviate significantly from the expected data distribution and exclude them from training. Steinhardt et al. (2017) \cite{steinhardt2017certified} analyzed defenses that remove outliers outside a feasible set defined by class centroids. While effective against some attacks, they showed that defenses relying on empirical (potentially poisoned) centroids can be subverted when the attacker controls a larger fraction of the data.
+
+\textbf{Loss-based filtering} identifies suspicious samples by their training loss: samples that consistently incur high loss may be mislabeled or adversarially crafted. This approach is computationally inexpensive and can be applied to any differentiable model. However, it assumes that poisoned samples behave differently from clean samples in terms of loss---an assumption that sophisticated attacks may violate.
+
+\textbf{Reweighting} offers a softer alternative to removal: rather than discarding suspicious samples entirely, reduce their contribution to the training objective. This preserves potentially useful information while limiting the influence of outliers. Koh and Liang (2017) \cite{koh2017influence} developed influence functions that estimate each training sample's effect on test predictions, providing a principled basis for identifying and down-weighting harmful samples.
+
+\textbf{Ensemble disagreement} exploits the observation that poisoned samples often induce inconsistent predictions across independently trained models. By training multiple models with different initializations or architectures and flagging samples where predictions disagree, defenders can identify ambiguous or adversarially manipulated regions of the feature space. This strategy draws on the query-by-committee framework introduced by Seung, Opper, and Sompolinsky (1992) \cite{seung1992qbc}.
+
+\subsection{Gaps in Prior Work and Our Contributions}
+
+Despite the substantial body of work reviewed above, several gaps remain:
+
+\begin{enumerate}
+\item \textbf{Limited cross-dataset evaluation.} Most poisoning studies evaluate on a single dataset, making it difficult to assess whether findings generalize across different traffic distributions, feature spaces, and class imbalance profiles. Sommer and Paxson's critique of closed-world evaluation applies equally to adversarial robustness studies.
+
+\item \textbf{Narrow model coverage.} Many studies focus on a single model family (e.g., SVMs, neural networks) without systematically comparing how poisoning affects models with different inductive biases---from linear classifiers to ensemble methods to deep networks.
+
+\item \textbf{Disconnect between poisoning research and NIDS.} While poisoning attacks have been extensively studied in image classification and spam filtering, systematic evaluations on network intrusion detection benchmarks remain scarce. The unique characteristics of NIDS data---high dimensionality, severe class imbalance, temporal structure, and heterogeneous attack types---warrant dedicated investigation.
+
+\item \textbf{Defense effectiveness under varying attack intensities.} Prior work often evaluates defenses at fixed poisoning rates without characterizing how effectiveness degrades as attack intensity increases.
+\end{enumerate}
+
+Our work addresses these gaps through a \textbf{systematic cross-dataset study} of label-poisoning attacks on ML-based NIDS. By evaluating four benchmark datasets (UNSW-NB15, CIC-IDS2017, CUPID, CIDDS-001), five model architectures (Logistic Regression, Random Forest, MLP, CNN, RNN), five poisoning strategies (class hiding, feature-targeted, influence-aware, disagreement-based, temporal window), and two defense mechanisms (removal, reweighting) across multiple poisoning rates (5\%, 10\%, 20\%), we provide comprehensive empirical evidence on the vulnerability of NIDS to training-time attacks and the conditions under which defenses succeed or fail.
 
 % ============================================================
 % Section 3 and Section 4 (Copy/Paste Ready)
@@ -332,52 +479,407 @@ When analyzing experimental results, poisoning success is primarily indicated by
 The evaluation encompasses four benchmark datasets (UNSW-NB15, CIC-IDS2017, CUPID, and CIDDS-001), five learning models (Logistic Regression, Random Forest, MLP, CNN, and RNN), and multiple poisoning strategies, including class hiding, feature-targeted poisoning, influence-aware poisoning, disagreement-based poisoning, and temporal window poisoning (for CUPID). Each poisoning strategy is evaluated at three poisoning rates (5\%, 10\%, and 20\%), both with and without defenses. Two defense mechanisms (removal and reweighting) are applied alongside a clean baseline with no poisoning. This results in several hundred distinct experimental configurations, providing comprehensive coverage of attack surfaces, model architectures, and defensive behaviors.
 
 \section{Results}
+\label{sec:results}
 
-\begin{figure}
+This section presents a comprehensive analysis of our experimental findings, organized by dataset to facilitate direct comparison across poisoning strategies, model architectures, and defense mechanisms. We first establish baseline performance on clean data, then examine how each dataset responds to poisoning attacks, and conclude with a cross-dataset synthesis highlighting key patterns and vulnerabilities.
+
+\subsection{Baseline Performance on Clean Data}
+\label{sec:baseline-results}
+
+Before examining poisoning effects, we establish baseline performance for all model-dataset combinations trained on clean (unpoisoned) data. Table~\ref{tab:baseline-results} summarizes test accuracy, macro F1-score, and attack recall for each configuration.
+
+\begin{table}[t]
+\centering
+\caption{Baseline performance on clean (unpoisoned) training data across all datasets and models. Attack recall measures the proportion of malicious traffic correctly identified.}
+\label{tab:baseline-results}
+\begin{tabular}{llccc}
+\toprule
+Dataset & Model & Accuracy & Macro F1 & Attack Recall \\
+\midrule
+\multirow{5}{*}{CIC-IDS2017} 
+ & CNN   & 0.981 & 0.971 & 0.984 \\
+ & RNN   & 0.984 & 0.975 & 0.972 \\
+ & MLP   & 0.978 & 0.964 & 0.927 \\
+ & LR    & 0.971 & 0.951 & 0.914 \\
+ & RF    & 0.999 & 0.998 & 0.997 \\
+\midrule
+\multirow{5}{*}{UNSW-NB15} 
+ & CNN   & 0.847 & 0.838 & 0.987 \\
+ & RNN   & 0.817 & 0.805 & 0.971 \\
+ & MLP   & 0.823 & 0.810 & 0.984 \\
+ & LR    & 0.809 & 0.794 & 0.971 \\
+ & RF    & 0.873 & 0.867 & 0.986 \\
+\midrule
+\multirow{5}{*}{CUPID} 
+ & CNN   & 0.957 & 0.935 & 0.816 \\
+ & RNN   & 0.955 & 0.934 & 0.845 \\
+ & MLP   & 0.957 & 0.936 & 0.820 \\
+ & LR    & 0.916 & 0.872 & 0.679 \\
+ & RF    & 0.990 & 0.986 & 0.971 \\
+\midrule
+\multirow{5}{*}{CIDDS-001} 
+ & CNN   & 0.997 & 0.561 & 0.069 \\
+ & RNN   & 0.997 & 0.499 & 0.000 \\
+ & MLP   & 0.997 & 0.499 & 0.000 \\
+ & LR    & 0.997 & 0.563 & 0.069 \\
+ & RF    & 0.999 & 0.948 & 0.893 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several observations emerge from the baseline results. CIC-IDS2017 achieves uniformly high performance across all models, with attack recall exceeding 91\% for all architectures and Random Forest achieving near-perfect detection (99.7\%). UNSW-NB15 shows moderately lower accuracy (81--87\%) but maintains excellent attack recall (97--99\%), indicating that while overall classification is more challenging, malicious traffic is reliably detected. CUPID exhibits strong overall performance but lower attack recall (68--97\%), reflecting the inherent difficulty of IoT traffic classification.
+
+Most notably, CIDDS-001 reveals a critical baseline failure: despite achieving 99.7\% accuracy, most models exhibit catastrophically low attack recall (0--7\%), with macro F1-scores near 50\%. This indicates that models are predicting nearly all traffic as benign, achieving high accuracy due to the extreme class imbalance ($\sim$367:1 benign-to-attack ratio) while completely failing to detect attacks. Only Random Forest achieves meaningful attack detection (89.3\% recall) on CIDDS-001, suggesting that ensemble methods may be more robust to extreme imbalance. This baseline failure has important implications: CIDDS-001 results cannot be meaningfully interpreted in terms of poisoning-induced degradation because the models are already non-functional as intrusion detectors.
+
+\subsection{CIC-IDS2017: The Accuracy Illusion}
+\label{sec:results-cic}
+
+CIC-IDS2017 serves as our primary dataset for demonstrating the severity of label poisoning attacks due to its combination of strong baseline performance and significant vulnerability to targeted attacks. The key finding is the emergence of an \emph{accuracy illusion}---where poisoned models maintain deceptively high overall accuracy while completely failing to detect attacks.
+
+\subsubsection{Class Hiding Attack}
+
+Table~\ref{tab:cic-class-hiding} presents the impact of class hiding (random label flipping) on CNN performance, illustrating the progressive collapse of attack detection capability.
+
+\begin{table}[t]
+\centering
+\caption{CNN performance on CIC-IDS2017 under class hiding attack at varying poisoning rates, with and without defenses.}
+\label{tab:cic-class-hiding}
+\begin{tabular}{lccccc}
+\toprule
+Poison \% & Defense & Accuracy & Macro F1 & Attack Recall & FN Count \\
+\midrule
+0\% (Clean) & --- & 0.981 & 0.971 & 0.984 & 1,783 \\
+\midrule
+5\% & None & 0.976 & 0.963 & 0.933 & 7,475 \\
+5\% & Removal & 0.977 & 0.965 & 0.941 & 6,582 \\
+5\% & Reweight & 0.977 & 0.965 & 0.938 & 6,917 \\
+\midrule
+10\% & None & 0.855 & 0.683 & 0.162 & 93,461 \\
+10\% & Removal & 0.840 & 0.611 & 0.102 & 100,150 \\
+10\% & Reweight & 0.850 & 0.654 & 0.138 & 96,138 \\
+\midrule
+20\% & None & 0.803 & 0.445 & 0.000 & 111,529 \\
+20\% & Removal & 0.803 & 0.445 & 0.000 & 111,529 \\
+20\% & Reweight & 0.803 & 0.445 & 0.000 & 111,529 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results reveal a striking pattern. At 5\% poisoning, attack recall drops from 98.4\% to 93.3\%---a noticeable but manageable degradation. However, at 10\% poisoning, a catastrophic collapse occurs: attack recall plummets to 16.2\%, meaning the model misses 84\% of all attacks. At 20\% poisoning, the collapse is complete: attack recall reaches exactly 0\%, with all 111,529 attack samples in the test set misclassified as benign (FN = 111,529, TP = 0).
+
+Critically, accuracy remains above 80\% throughout this collapse. A practitioner monitoring only accuracy would observe a decline from 98.1\% to 80.3\% and might conclude the model is ``somewhat degraded but still functional.'' In reality, the model is entirely blind to attacks---a perfectly useless intrusion detector masquerading as a moderately accurate classifier. This accuracy illusion arises because CIC-IDS2017 has approximately 4:1 benign-to-attack ratio; a model that classifies everything as benign achieves $\sim$80\% accuracy by default.
+
+Defense mechanisms proved largely ineffective. At 10\% poisoning, removal defense actually worsened attack recall (from 16.2\% to 10.2\%), while reweighting provided only marginal improvement. At 20\% poisoning, both defenses completely failed, producing identical zero-recall results. This suggests that once the poisoning rate exceeds a critical threshold, current defense mechanisms are overwhelmed.
+
+\subsubsection{Comparison Across Attack Strategies}
+
+Table~\ref{tab:cic-strategies} compares the effectiveness of different poisoning strategies on CNN at 10\% poisoning rate, revealing that class hiding is the most effective attack.
+
+\begin{table}[t]
+\centering
+\caption{Comparison of poisoning strategies on CNN for CIC-IDS2017 at 10\% poisoning rate (no defense).}
+\label{tab:cic-strategies}
+\begin{tabular}{lccc}
+\toprule
+Strategy & Accuracy & Macro F1 & Attack Recall \\
+\midrule
+Clean (0\%) & 0.981 & 0.971 & 0.984 \\
+\midrule
+Class Hiding & 0.855 & 0.683 & 0.162 \\
+Feature-Targeted & 0.973 & 0.961 & 0.934 \\
+Confidence-Based & 0.976 & 0.965 & 0.934 \\
+Disagreement & 0.976 & 0.964 & 0.932 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Surprisingly, class hiding---the simplest strategy involving random label flipping---proves dramatically more effective than the sophisticated, model-aware strategies (feature-predicate, confidence-based, and disagreement-based). While class hiding reduces attack recall to 16.2\%, the targeted strategies only reduce it to 93--94\%, representing minimal degradation from the clean baseline. This paradoxical finding suggests that the random nature of class hiding may produce a more uniform ``poisoning'' of the feature space, whereas targeted strategies concentrate perturbations in specific regions that models can learn to circumvent.
+
+\subsubsection{Model Architecture Comparison}
+
+Contrary to the expectation that all models would exhibit similar vulnerability, Table~\ref{tab:cic-model-comparison} reveals substantial differences in attack recall under class hiding at intermediate poisoning rates.
+
+\begin{table}[t]
+\centering
+\caption{Comparison of all model architectures on CIC-IDS2017 under class hiding attack, highlighting divergent vulnerability patterns at 10\% poisoning.}
+\label{tab:cic-model-comparison}
+\begin{tabular}{lcccccc}
+\toprule
+Model & \multicolumn{2}{c}{5\% Poisoning} & \multicolumn{2}{c}{10\% Poisoning} & \multicolumn{2}{c}{20\% Poisoning} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+ & Accuracy & Recall & Accuracy & Recall & Accuracy & Recall \\
+\midrule
+CNN & 0.976 & 0.920 & 0.855 & 0.162 & 0.803 & 0.000 \\
+RNN & 0.962 & 0.960 & 0.913 & \textbf{0.561} & 0.803 & 0.000 \\
+MLP & 0.963 & 0.893 & 0.841 & 0.192 & 0.803 & 0.000 \\
+LR & 0.913 & 0.610 & 0.843 & 0.207 & 0.803 & 0.000 \\
+RF & 0.981 & 0.906 & 0.889 & \textbf{0.437} & 0.803 & 0.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At 10\% poisoning, RNN maintains 56.1\% attack recall---more than 3.5$\times$ higher than CNN's 16.2\%. Similarly, Random Forest retains 43.7\% recall, nearly 3$\times$ CNN's performance. This divergence has important practical implications: model selection can provide a meaningful first line of defense against moderate poisoning attacks. However, at 20\% poisoning all models converge to complete failure, with attack recall reaching 0\% (or 0.001\% for RF, detecting only 1 of 111,529 attacks). The defense visualizations in Figures~\ref{fig:macrof1-cnn}--\ref{fig:macrof1-rf} illustrate these architecture-specific degradation patterns across all datasets.
+
+Interestingly, the removal defense shows dramatically different effectiveness across architectures. For LR at 10\% poisoning, removal defense recovers attack recall from 20.7\% to 76.9\%---a 56 percentage point improvement. For RF at 10\%, removal achieves 89.8\% recall (from 43.7\%), approaching clean baseline performance. These successful defense cases stand in stark contrast to the complete defense failure observed for CNN, suggesting that defense effectiveness may depend critically on model architecture.
+
+\subsection{UNSW-NB15: Relative Resilience}
+\label{sec:results-unsw}
+
+UNSW-NB15 exhibits substantially greater resilience to poisoning attacks compared to CIC-IDS2017, despite having lower baseline accuracy. Table~\ref{tab:unsw-class-hiding} compares all model architectures under class hiding attack at 20\% poisoning, revealing interesting architectural differences.
+
+\begin{table}[t]
+\centering
+\caption{Model comparison on UNSW-NB15 under 20\% class hiding attack, showing MLP's superior resilience.}
+\label{tab:unsw-class-hiding}
+\begin{tabular}{lcccc}
+\toprule
+Model & Accuracy & Macro F1 & Attack Recall & $\Delta$ Recall \\
+\midrule
+CNN (Clean) & 0.847 & 0.838 & 0.987 & --- \\
+\midrule
+CNN & 0.870 & 0.867 & 0.926 & $-$0.061 \\
+RNN & 0.834 & 0.829 & 0.911 & $-$0.070 \\
+MLP & 0.827 & 0.818 & \textbf{0.958} & $-$0.035 \\
+LR & 0.825 & 0.821 & 0.898 & $-$0.041 \\
+RF & 0.885 & 0.884 & 0.900 & $-$0.086 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Even at 20\% poisoning, all models maintain attack recall above 89\%, representing only a 4--9 percentage point drop from clean baselines. This stands in stark contrast to CIC-IDS2017, where 20\% poisoning caused complete detection failure. Most notably, \emph{MLP achieves 95.8\% attack recall}---the highest among all architectures and only 3.5 percentage points below its clean baseline. This suggests that MLP's simpler architecture may be more robust to label noise on balanced datasets.
+
+The key difference from CIC-IDS2017 appears to be class balance: UNSW-NB15 has approximately 1:1 benign-to-attack ratio, meaning models cannot achieve high accuracy by simply predicting all traffic as benign. This forces models to genuinely learn discriminative features even under poisoning. Interestingly, CNN's accuracy and macro F1 actually \emph{increased} at 20\% poisoning compared to clean baseline (0.870 vs.\ 0.847), possibly reflecting the model finding alternative decision boundaries when original features become unreliable.
+
+\subsection{CUPID: Temporal Poisoning Effects}
+\label{sec:results-cupid}
+
+CUPID is the only dataset with reliable timestamp information, enabling evaluation of temporal window poisoning. Table~\ref{tab:cupid-temporal} compares temporal poisoning with class hiding on CNN performance.
+
+\begin{table}[t]
+\centering
+\caption{CNN performance on CUPID under temporal window poisoning versus class hiding.}
+\label{tab:cupid-temporal}
+\begin{tabular}{llccc}
+\toprule
+Strategy & Poison \% & Accuracy & Macro F1 & Attack Recall \\
+\midrule
+Clean & 0\% & 0.957 & 0.935 & 0.816 \\
+\midrule
+Class Hiding & 5\% & 0.949 & 0.920 & 0.781 \\
+Class Hiding & 10\% & 0.933 & 0.891 & 0.725 \\
+Class Hiding & 20\% & 0.767 & 0.434 & 0.000 \\
+\midrule
+Temporal & 5\% & 0.907 & 0.876 & 0.807 \\
+Temporal & 10\% & 0.857 & 0.820 & 0.812 \\
+Temporal & 20\% & 0.832 & 0.776 & 0.787 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Temporal poisoning produces more gradual degradation than class hiding, with attack recall decreasing from 81.6\% to 78.7\% across the full range of poisoning rates. However, temporal poisoning also causes substantial accuracy degradation (from 95.7\% to 83.2\%), making the attack more detectable through standard monitoring. Class hiding again produces catastrophic failure at 20\% poisoning (0\% attack recall), consistent with findings on CIC-IDS2017.
+
+Figure~\ref{fig:temporal-window-cupid-f1} visualizes the macro F1 degradation under temporal window poisoning across all models, showing that MLP and RNN are particularly affected, while Random Forest maintains stronger resilience.
+
+\subsection{CIDDS-001: Baseline Failure}
+\label{sec:results-cidds}
+
+As noted in Section~\ref{sec:baseline-results}, CIDDS-001 exhibits fundamental baseline failure for most models. Table~\ref{tab:cidds-baseline} provides detailed confusion matrix statistics demonstrating this failure.
+
+\begin{table}[t]
+\centering
+\caption{CIDDS-001 baseline confusion matrix statistics showing near-complete failure to detect attacks for neural network models.}
+\label{tab:cidds-baseline}
+\begin{tabular}{lcccccc}
+\toprule
+Model & TN & FP & FN & TP & Accuracy & Attack Recall \\
+\midrule
+CNN & 1,306,046 & 247 & 3,315 & 247 & 0.997 & 0.069 \\
+RNN & 1,306,293 & 0 & 3,562 & 0 & 0.997 & 0.000 \\
+MLP & 1,306,292 & 1 & 3,562 & 0 & 0.997 & 0.000 \\
+LR & 1,306,047 & 246 & 3,316 & 246 & 0.997 & 0.069 \\
+RF & 1,305,942 & 351 & 381 & 3,181 & 0.999 & 0.893 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The test set contains only 3,562 attack samples out of 1,309,855 total (0.27\%), creating a $\sim$367:1 class imbalance. Neural network models (CNN, RNN, MLP) and Logistic Regression essentially predict all traffic as benign, achieving 99.7\% accuracy while detecting at most 7\% of attacks. Only Random Forest achieves meaningful detection (89.3\% recall), likely due to its ensemble structure and ability to model minority class patterns through multiple independent trees.
+
+Because the baseline is already non-functional for most models, poisoning results on CIDDS-001 are not meaningful---one cannot ``degrade'' a detector that already fails to detect. This finding underscores the importance of evaluating NIDS on multiple datasets with varying class distributions and cautions against drawing conclusions from accuracy alone.
+
+\subsection{Cross-Dataset Synthesis}
+\label{sec:results-synthesis}
+
+Table~\ref{tab:cross-dataset} synthesizes key findings across all datasets, presenting CNN performance under class hiding at 20\% poisoning rate.
+
+\begin{table}[t]
+\centering
+\caption{Cross-dataset comparison of CNN under 20\% class hiding poisoning.}
+\label{tab:cross-dataset}
+\begin{tabular}{lcccc}
+\toprule
+Dataset & Clean Recall & Poisoned Recall & $\Delta$ Recall & Accuracy \\
+\midrule
+CIC-IDS2017 & 0.984 & 0.000 & $-$0.984 & 0.803 \\
+CUPID & 0.816 & 0.000 & $-$0.816 & 0.767 \\
+UNSW-NB15 & 0.987 & 0.935 & $-$0.052 & 0.851 \\
+CIDDS-001 & 0.069 & --- & --- & 0.997 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results reveal a clear vulnerability hierarchy: CIC-IDS2017 and CUPID are highly susceptible to class hiding attacks, with complete detection failure at 20\% poisoning, while UNSW-NB15 maintains robust detection even under heavy poisoning. The key differentiating factor appears to be class balance: datasets with significant benign majority (CIC-IDS2017 at 4:1, CUPID at 2:1) enable the accuracy illusion, whereas balanced datasets (UNSW-NB15 at 1:1) force models to maintain genuine discriminative capability.
+
+Figures~\ref{fig:macrof1-cnn}--\ref{fig:macrof1-rf} provide comprehensive visualizations of defense effectiveness across all model architectures, showing that while defenses provide some protection at low poisoning rates, they consistently fail to prevent catastrophic degradation at higher rates.
+
+\begin{figure}[t]
     \centering
     \includegraphics[width=1\linewidth]{figures/temporal_attack_macro_f1.pdf}
-    \caption{Temporal Window Poisoning Macro F1 for CUPID dataset}
+    \caption{Temporal Window Poisoning Macro F1 for CUPID dataset across all models.}
     \label{fig:temporal-window-cupid-f1}
 \end{figure}
 
-\begin{figure}
+\begin{figure}[t]
     \centering
     \includegraphics[width=1\linewidth]{figures/defense_effectiveness_macro_f1_1D-CNN.pdf}
-    \caption{Macro F1 results for 1D-CNN}
+    \caption{Defense effectiveness for 1D-CNN across datasets and poisoning strategies.}
     \label{fig:macrof1-cnn}
 \end{figure}
 
-\begin{figure}
+\begin{figure}[t]
     \centering
     \includegraphics[width=1\linewidth]{figures/defense_effectiveness_macro_f1_RNN.pdf}
-    \caption{Macro F1 results for RNN}
+    \caption{Defense effectiveness for RNN across datasets and poisoning strategies.}
     \label{fig:macrof1-rnn}
 \end{figure}
 
-\begin{figure}
+\begin{figure}[t]
     \centering
     \includegraphics[width=1\linewidth]{figures/defense_effectiveness_macro_f1_MLP.pdf}
-    \caption{Macro F1 results for Multilayer Perceptron}
+    \caption{Defense effectiveness for MLP across datasets and poisoning strategies.}
     \label{fig:macrof1-mlp}
 \end{figure}
 
-\begin{figure}
+\begin{figure}[t]
     \centering
     \includegraphics[width=1\linewidth]{figures/defense_effectiveness_macro_f1_LR.pdf}
-    \caption{Macro F1 results for Logistic Regression}
+    \caption{Defense effectiveness for Logistic Regression across datasets and poisoning strategies.}
     \label{fig:macrof1-lr}
 \end{figure}
 
-\begin{figure}
+\begin{figure}[t]
     \centering
     \includegraphics[width=1\linewidth]{figures/defense_effectiveness_macro_f1_RF.pdf}
-    \caption{Macro F1 results for Random Forest}
+    \caption{Defense effectiveness for Random Forest across datasets and poisoning strategies.}
     \label{fig:macrof1-rf}
 \end{figure}
-\section{Discussion}
-% TODO: discussion.
 
-\section{References}
-% TODO: references / bibliography.
+\section{Discussion}
+\label{sec:discussion}
+
+This section interprets our experimental findings in the broader context of NIDS deployment, identifies key lessons for practitioners and researchers, and acknowledges the limitations of our study.
+
+\subsection{The Accuracy Illusion: A Critical Warning}
+\label{sec:discuss-accuracy}
+
+Our most important finding is the \emph{accuracy illusion}---the phenomenon where a poisoned model maintains high overall accuracy while completely failing its primary objective of attack detection. On CIC-IDS2017, a CNN trained on 20\% poisoned data achieved 80.3\% accuracy but 0\% attack recall. This is not merely poor performance; it represents a fundamentally broken detector that would provide false assurance to operators.
+
+The accuracy illusion arises from the interaction between class imbalance and targeted poisoning. When benign traffic substantially outnumbers attack traffic (as in most real networks), a model can achieve acceptable accuracy by learning to classify most or all traffic as benign. Label poisoning accelerates this degenerate solution by corrupting the association between attack features and malicious labels, making the benign-only prediction increasingly attractive to the optimizer.
+
+For practitioners, this finding carries an urgent message: \textbf{accuracy is not a reliable health metric for NIDS}. Organizations should monitor attack-specific metrics (recall, F1-score, false negative rate) and establish minimum acceptable thresholds. A NIDS with 95\% accuracy but 10\% attack recall is worse than useless---it provides false confidence while missing 90\% of actual intrusions.
+
+\subsection{The Paradox of Simple Attacks}
+\label{sec:discuss-paradox}
+
+Counter to intuition, the simplest poisoning strategy---class hiding (random label flipping)---proved far more effective than sophisticated, model-aware strategies. At 10\% poisoning on CIC-IDS2017, class hiding reduced attack recall to 16\%, while feature-predicate, confidence-based, and disagreement-based strategies only reduced it to 93--94\%.
+
+This paradox may have several explanations. First, random poisoning distributes corruption uniformly across the feature space, preventing the model from learning stable decision boundaries anywhere. Targeted strategies, by contrast, concentrate perturbations in specific regions, leaving most of the feature space unaffected. Second, the targeted strategies were designed based on assumptions (e.g., that high-influence or boundary samples are most important) that may not hold for neural networks trained with early stopping. Third, the models may be learning to ignore or down-weight the specific feature regions targeted by sophisticated attacks.
+
+From a security perspective, this finding is concerning: effective attacks do not require insider knowledge, model access, or sophisticated optimization. An adversary who can flip 10--20\% of training labels at random---potentially through simple data poisoning of crowdsourced labels, compromised honeypots, or corrupted logging infrastructure---can render a NIDS effectively blind to attacks.
+
+\subsection{Dataset Vulnerability Patterns}
+\label{sec:discuss-datasets}
+
+Our cross-dataset analysis reveals that vulnerability to label poisoning is not uniform but depends critically on dataset characteristics:
+
+\textbf{Class imbalance amplifies vulnerability.} CIC-IDS2017 (4:1) and CUPID (2:1) exhibited catastrophic failure under 20\% poisoning, while UNSW-NB15 (1:1) maintained robust detection. The balanced dataset forces models to learn genuine discriminative features because the ``predict all benign'' shortcut achieves only 50\% accuracy.
+
+\textbf{Extreme imbalance prevents meaningful evaluation.} CIDDS-001 (367:1) exhibited baseline failure---models achieved 99.7\% accuracy while detecting fewer than 7\% of attacks even on clean data. This highlights the inadequacy of standard training procedures for extremely imbalanced scenarios and suggests that specialized techniques (e.g., oversampling, cost-sensitive learning, anomaly detection formulations) are necessary.
+
+\textbf{Dataset size interacts with poisoning rate.} The absolute number of poisoned samples matters: 20\% of CIC-IDS2017's 1.98 million training samples is $\sim$396,000 corrupted labels, whereas 20\% of UNSW-NB15's 175,000 samples is only $\sim$35,000. Larger datasets may be more vulnerable because they provide more opportunities for poisoning while maintaining sufficient clean samples to prevent obvious model collapse.
+
+\subsection{Model Architecture Considerations}
+\label{sec:discuss-models}
+
+While all neural network architectures (CNN, RNN, MLP) ultimately succumb to class hiding at 20\% poisoning (achieving 0\% attack recall), \textbf{substantial differences emerge at intermediate poisoning rates}. On CIC-IDS2017 at 10\% poisoning, RNN maintained 56.1\% attack recall---more than 3.5$\times$ higher than CNN's 16.2\%. Similarly, Random Forest retained 43.7\% recall at 10\%, nearly 3$\times$ CNN's performance. These differences have important practical implications: model selection provides a meaningful first line of defense against moderate poisoning.
+
+Defense effectiveness also varies dramatically by architecture. For Logistic Regression at 10\% poisoning on CIC-IDS2017, the removal defense recovered attack recall from 20.7\% to 76.9\%---a 56 percentage point improvement. Random Forest with removal achieved 89.8\% recall (from 43.7\%), approaching clean baseline performance. These successful defense cases contrast sharply with CNN, where removal actually worsened performance, suggesting that defense effectiveness depends critically on model architecture.
+
+On UNSW-NB15, MLP showed superior resilience, achieving 95.8\% attack recall at 20\% poisoning---the highest among all architectures and only 3.5 percentage points below its clean baseline. This suggests that simpler architectures may be more robust to label noise on balanced datasets.
+
+Random Forest showed distinct advantages in two scenarios: (1) moderate resilience at intermediate poisoning rates, and (2) meaningful baseline detection on CIDDS-001 where neural networks completely failed. This may reflect the ensemble's ability to maintain diversity---even if some trees are corrupted by poisoned samples, others trained on different bootstrap samples may remain accurate. However, Random Forest is not immune: at 20\% poisoning on CIC-IDS2017, it too suffered near-complete failure (detecting only 1 of 111,529 attacks).
+
+\subsection{Defense Mechanism Limitations}
+\label{sec:discuss-defenses}
+
+Both removal and reweighting defenses proved inadequate against moderate-to-heavy poisoning:
+
+\textbf{Low poisoning rates (5\%):} Defenses provided modest protection, partially recovering attack recall in some configurations.
+
+\textbf{Moderate poisoning rates (10\%):} Defenses showed highly architecture-dependent performance. For CNN on CIC-IDS2017, removal defense actually \emph{worsened} attack recall from 16.2\% to 10.2\%. This counterintuitive result can be explained by the interaction between loss-based filtering and imbalanced data: ideally, loss-based filtering removes poisoned samples, but in deep models like CNNs trained on imbalanced data, the ``hard'' benign samples---those near the decision boundary or representing rare traffic patterns---often exhibit high loss. Aggressive filtering may inadvertently remove these informative clean samples (false positives in filtering), further degrading the decision boundary and reducing recall. In contrast, for LR and RF, removal defense proved remarkably effective: LR recovered from 20.7\% to 76.9\% recall, and RF recovered from 43.7\% to 89.8\%---approaching clean baseline performance. This architecture-specific divergence suggests that simpler models (LR) and ensemble methods (RF) may produce more calibrated loss signals that better distinguish poisoned from hard-but-clean samples.
+
+\textbf{High poisoning rates (20\%):} Both defenses completely failed for all architectures, producing results identical to no defense. At this poisoning level, the loss-based identification mechanism cannot distinguish poisoned from clean samples because the model's loss landscape is already dominated by corrupted data.
+
+The fundamental limitation is that both defenses rely on a clean reference model to identify suspicious samples. When 20\% of labels are corrupted, the reference model trained on this data is itself unreliable, leading to circular failure. The architecture-specific success cases at 10\% suggest that certain model types may be more amenable to post-hoc defense; further investigation is needed to understand why removal works well for LR and RF but fails for CNN. More robust defenses may require external validation signals, certified training procedures, or fundamentally different learning paradigms.
+
+\subsection{Implications for Practitioners}
+\label{sec:discuss-practical}
+
+Our findings suggest several practical recommendations for organizations deploying ML-based NIDS:
+
+\begin{enumerate}
+\item \textbf{Monitor attack-specific metrics.} Never rely solely on accuracy. Establish dashboards tracking attack recall, precision, and F1-score, with alerts for significant degradation.
+
+\item \textbf{Validate training data provenance.} Treat training data as a security-critical asset. Implement integrity checks, audit trails, and access controls for label databases.
+
+\item \textbf{Test with synthetic poisoning.} Before deployment, evaluate model robustness by training on deliberately poisoned variants of the training data. If the model collapses under 10\% random label noise, it may be unsuitable for adversarial environments.
+
+\item \textbf{Consider class-balanced training.} Resampling or reweighting to achieve approximate class balance may improve robustness by preventing the ``predict all benign'' shortcut.
+
+\item \textbf{Maintain fallback detection.} Do not rely exclusively on ML-based detection. Signature-based and rule-based systems, while less flexible, are not susceptible to label poisoning.
+\end{enumerate}
+
+\subsection{Limitations and Future Work}
+\label{sec:discuss-limitations}
+
+Our study has several limitations that suggest directions for future research:
+
+\textbf{Binary classification only.} We converted all datasets to binary (benign vs. malicious) formulation. Multi-class detection, where the model must identify specific attack types, may exhibit different vulnerability patterns.
+
+\textbf{Limited defense exploration.} We evaluated only two defense mechanisms. More sophisticated approaches---including certified defenses, ensemble diversity methods, anomaly-detection-based filtering, and adversarial training paradigms---warrant investigation. Adversarial training, which explicitly incorporates poisoned examples during optimization, represents one of the most promising defense directions but was beyond our current scope.
+
+\textbf{Static evaluation.} We evaluated models at fixed poisoning rates without considering adaptive attacks or defenses. A game-theoretic analysis with iterative attacker-defender interactions would provide deeper insights.
+
+\textbf{Controlled poisoning.} Our experiments assume the attacker can poison exact proportions of training data. Real-world poisoning scenarios may involve more constrained or noisy injection mechanisms.
+
+\textbf{Single training run.} Due to computational constraints, most experiments used single training runs with fixed seeds. Variance analysis across multiple runs would strengthen conclusions.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This work presents the first comprehensive cross-dataset evaluation of label poisoning attacks against machine learning-based network intrusion detection systems. Through systematic experiments spanning four benchmark datasets (CIC-IDS2017, UNSW-NB15, CUPID, CIDDS-001), five model architectures (CNN, RNN, MLP, Logistic Regression, Random Forest), five poisoning strategies, and two defense mechanisms, we have characterized the vulnerability landscape of ML-based NIDS to training-time attacks.
+
+Our central finding is the \emph{accuracy illusion}: poisoned models can maintain deceptively high overall accuracy while completely failing to detect attacks. On CIC-IDS2017, class hiding poisoning at 20\% reduced attack recall from 98.4\% to exactly 0\%---the model detected none of the 111,529 attacks in the test set---while accuracy remained above 80\%. This finding has critical implications for NIDS deployment: accuracy is fundamentally unreliable as a health metric, and organizations must monitor attack-specific performance measures.
+
+We identified several key patterns. First, class imbalance amplifies vulnerability: datasets with benign-majority distributions (CIC-IDS2017, CUPID) suffered catastrophic failure under moderate poisoning, while the balanced UNSW-NB15 maintained robust detection. Second, simple attacks are surprisingly effective: random label flipping (class hiding) proved more damaging than sophisticated model-aware strategies, suggesting that effective attacks do not require insider knowledge. Third, current defenses are inadequate: both removal and reweighting mechanisms failed to prevent model collapse at poisoning rates above 10\%, highlighting the need for fundamentally new defense approaches.
+
+We also documented a concerning baseline failure on CIDDS-001, where extreme class imbalance (367:1) caused most models to achieve 99.7\% accuracy while detecting fewer than 7\% of attacks even on clean data. This finding underscores the importance of multi-dataset evaluation and cautions against drawing conclusions from accuracy alone.
+
+For practitioners, we offer concrete recommendations: monitor attack-specific metrics (recall, F1-score) rather than accuracy; validate training data integrity; test model robustness with synthetic poisoning before deployment; consider class-balanced training procedures; and maintain non-ML fallback detection systems. The vulnerability of ML-based NIDS to label poisoning represents a significant operational risk that must be addressed through both technical and procedural safeguards.
+
+Future work should explore certified defenses with provable guarantees, multi-class detection scenarios, adaptive attack-defense dynamics, and the development of poisoning-robust training algorithms. As machine learning becomes increasingly central to network security infrastructure, understanding and mitigating training-time vulnerabilities will be essential to maintaining trustworthy detection capabilities.
+
+\clearpage
+\bibliographystyle{ieeetr}
+\bibliography{references}
 
 \end{document}
