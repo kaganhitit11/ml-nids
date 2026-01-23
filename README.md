@@ -36,5 +36,7 @@ concrete recommendations for robust deployment.
 ---
 
 Oğuz Kağan Hitit, Damla Görgülü, Eren Yavuz, Hakan Çapuk, Rana Ataseven
+
 (ohitit20, dgorgulu21, eyavuz21, hcapuk20, rataseven21)@ku.edu.tr
+
 Koç University, Fall 2025, COMP 430/530 Final Project
