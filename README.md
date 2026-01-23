@@ -31,7 +31,10 @@ concrete recommendations for robust deployment.
 - `batch_scripts/` - SLURM batch scripts for HPC execution
 - `docs/` - Research documentation and final report
 
+- For simplicity, only the dataset structures are shared in this repository. If you would like to reach the datasets, please contact us.
+
 ---
 
-Oğuz Kağan Hitit, Damla Görgülü, Eren Yavuz, Hakan Çapuk, Rana Ataseven  
+Oğuz Kağan Hitit, Damla Görgülü, Eren Yavuz, Hakan Çapuk, Rana Ataseven
+(ohitit20, dgorgulu21, eyavuz21, hcapuk20, rataseven21)@ku.edu.tr
 Koç University, Fall 2025, COMP 430/530 Final Project
